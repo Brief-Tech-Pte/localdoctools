@@ -11,9 +11,10 @@
         </div>
         <div class="q-mt-lg">
           <q-btn
+            v-if="primaryTool"
             color="primary"
-            label="Try Word → Markdown"
-            :to="{ name: 'word-to-markdown' }"
+            :label="`Try ${primaryTool.label}`"
+            :to="{ name: primaryTool.route.name }"
             size="lg"
             class="q-mr-sm"
           />
@@ -88,27 +89,16 @@
         <q-card-section>
           <div class="text-h6 text-weight-medium q-mb-md">Tools (Growing Library)</div>
           <div class="row q-col-gutter-md">
-            <div class="col-12 col-md-4">
+            <div v-for="tool in toolsList" :key="tool.id" class="col-12 col-md-4">
               <q-card bordered class="fit">
                 <q-card-section>
-                  <div class="text-subtitle1 text-weight-medium">Word → Markdown</div>
+                  <div class="text-subtitle1 text-weight-medium">{{ tool.label }}</div>
                   <div class="text-caption text-grey-7">
-                    Convert .docx to clean Markdown with images preserved.
+                    {{ tool.shortDescription || 'Tool description coming soon.' }}
                   </div>
                 </q-card-section>
                 <q-card-actions align="right">
-                  <q-btn color="primary" flat label="Open" :to="{ name: 'word-to-markdown' }" />
-                </q-card-actions>
-              </q-card>
-            </div>
-            <div class="col-12 col-md-4">
-              <q-card bordered class="fit">
-                <q-card-section>
-                  <div class="text-subtitle1 text-weight-medium">PDF Tools</div>
-                  <div class="text-caption text-grey-7">Split, merge, compress (coming soon).</div>
-                </q-card-section>
-                <q-card-actions align="right">
-                  <q-btn disable flat label="Coming soon" />
+                  <q-btn color="primary" flat label="Open" :to="{ name: tool.route.name }" />
                 </q-card-actions>
               </q-card>
             </div>
@@ -131,6 +121,13 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+
+import { tools as toolsRegistry } from 'src/tools'
+
+const toolsList = toolsRegistry
+const primaryTool = computed(() => toolsList[0] ?? null)
+
 function scrollToFeatures() {
   const el = document.getElementById('features')
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
