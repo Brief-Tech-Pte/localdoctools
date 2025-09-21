@@ -91,11 +91,21 @@ function buildMammothOptions(opts: ConvertOptions): Record<string, unknown> {
 
   const shouldInlineImages = opts.inlineImages ?? true
   if (shouldInlineImages && !base.convertImage) {
-    // base.convertImage = mammoth.images.inline(async (element: any) => {
-    //   const buffer = await element.read('base64')
-    //   const contentType = element.contentType
-    //   return { src: `data:${contentType};base64,${buffer}` }
-    // })
+    // Mammoth types are apparently lacking!
+    type MammothImages = {
+      inline: (
+        handler: (element: {
+          read: (type: string) => Promise<string>
+          contentType: string
+        }) => Promise<{ src: string }>
+      ) => unknown
+    }
+    const images = (mammoth as unknown as { images: MammothImages }).images
+    base.convertImage = images.inline(async (element) => {
+      const buffer = await element.read('base64')
+      const contentType = element.contentType
+      return { src: `data:${contentType};base64,${buffer}` }
+    })
   }
 
   return base
