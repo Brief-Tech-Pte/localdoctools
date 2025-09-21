@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { exportFile } from 'quasar'
 import { convertDocxFileToMarkdown } from '../services/docxToMarkdown'
 
 const file = ref<File | null>(null)
@@ -130,14 +131,11 @@ async function copyMarkdown() {
 
 function downloadMarkdown() {
   if (!markdown.value) return
-  const blob = new Blob([markdown.value], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
   const baseName = (file.value?.name || 'document').replace(/\.[^.]+$/, '')
-  a.href = url
-  a.download = `${baseName}.md`
-  a.click()
-  URL.revokeObjectURL(url)
+  exportFile(`${baseName}.md`, markdown.value, {
+    mimeType: 'text/markdown;charset=utf-8',
+    byteOrderMark: '\ufeff',
+  })
 }
 </script>
 

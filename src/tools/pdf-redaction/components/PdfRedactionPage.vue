@@ -165,6 +165,7 @@
 
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { exportFile } from 'quasar'
 
 import type * as PdfJsTypes from 'pdfjs-dist'
 import type { PdfRedactionProgress, RedactionMark, RedactionRect } from '../types/redaction'
@@ -186,6 +187,7 @@ const statusMessage = ref('')
 const statusVariant = ref<'neutral' | 'error' | 'success'>('neutral')
 const downloadUrl = ref('')
 const pdfHash = ref('')
+const lastResultBytes = ref<ArrayBuffer | null>(null)
 
 const pdfDoc = ref<PDFDocumentProxy | null>(null)
 const activePageIndex = ref(0)
@@ -201,6 +203,8 @@ const drawingPointerId = ref<number | null>(null)
 const pointerOrigin = ref<{ x: number; y: number } | null>(null)
 
 const resizeTimeout = ref<number | undefined>()
+// Guards async file loading/hash/renders from racing. Increment for each new selection.
+const loadRequestId = ref(0)
 
 let pdfjsModule: PdfJsModule | null = null
 let pdfWorkerInstance: Worker | null = null
@@ -310,25 +314,39 @@ function reset() {
 }
 
 async function onFileChange(newFile: File | null) {
+  // Tokenize this request to prevent prior async continuations from mutating state
+  const token = ++loadRequestId.value
   try {
     reset()
     file.value = newFile
     if (!newFile) return
-    pdfHash.value = await computeFileHash(newFile)
-    await loadPdfDocument(newFile)
+    const hash = await computeFileHash(newFile)
+    // Bail if a newer selection happened while hashing
+    if (token !== loadRequestId.value || file.value !== newFile) return
+    pdfHash.value = hash
+    await loadPdfDocument(newFile, token)
   } catch (e) {
     console.error(e)
-    statusMessage.value = 'Failed to load PDF. Please try again.'
-    statusVariant.value = 'error'
+    // Only surface error if this request is still current
+    if (token === loadRequestId.value) {
+      statusMessage.value = 'Failed to load PDF. Please try again.'
+      statusVariant.value = 'error'
+    }
   }
 }
 
-async function loadPdfDocument(selectedFile: File) {
+async function loadPdfDocument(selectedFile: File, token?: number) {
   cancelRenderTask()
   const pdfjs = await ensurePdfJs()
+  // If another selection happened while ensuring pdfjs, abort
+  if (token !== undefined && token !== loadRequestId.value) return
   const arrayBuffer = await selectedFile.arrayBuffer()
+  // Abort if file changed while reading
+  if (token !== undefined && (token !== loadRequestId.value || file.value !== selectedFile)) return
   const loadingTask = pdfjs.getDocument({ data: arrayBuffer })
   const doc = await loadingTask.promise
+  // Final guard before mutating component state
+  if (token !== undefined && (token !== loadRequestId.value || file.value !== selectedFile)) return
   pdfDoc.value = markRaw(doc)
   maxPageIndex.value = Math.max(0, doc.numPages - 1)
   activePageIndex.value = 0
@@ -571,8 +589,22 @@ async function applyRedactions() {
         ? (bytes.buffer as ArrayBuffer)
         : bytes.slice().buffer
     downloadUrl.value = URL.createObjectURL(new Blob([arrayBuffer], { type: 'application/pdf' }))
+    lastResultBytes.value = arrayBuffer
     statusMessage.value = 'Redaction pipeline completed. Review and download the output PDF.'
     statusVariant.value = 'success'
+
+    // Reload the redacted PDF into the viewer so users can continue redacting.
+    // Use the same race-guarding token approach as file selection.
+    const redactedBlob = new Blob([arrayBuffer], { type: 'application/pdf' })
+    const redactedFile = new File([redactedBlob], 'redacted.pdf', { type: 'application/pdf' })
+    const token = ++loadRequestId.value
+    // Start fresh marks for the new document; keep the download URL intact.
+    redactionMarks.value = []
+    file.value = redactedFile
+    const newHash = await computeFileHash(redactedFile)
+    if (token !== loadRequestId.value || file.value !== redactedFile) return
+    pdfHash.value = newHash
+    await loadPdfDocument(redactedFile, token)
   } catch (error) {
     console.error(error)
     statusMessage.value =
@@ -588,11 +620,10 @@ function handleProgress(progress: PdfRedactionProgress) {
 }
 
 function downloadResult() {
-  if (!downloadUrl.value) return
-  const anchor = document.createElement('a')
-  anchor.href = downloadUrl.value
-  anchor.download = 'redacted.pdf'
-  anchor.click()
+  if (!lastResultBytes.value) return
+  exportFile('redacted.pdf', lastResultBytes.value, {
+    mimeType: 'application/pdf',
+  })
 }
 
 function serializeMarks(marks: Array<RedactionMark & { id: string }>): RedactionMark[] {
