@@ -1,8 +1,8 @@
-import { fileURLToPath, URL } from 'node:url';
-import { defineConfig } from 'vitest/config';
-import vue from '@vitejs/plugin-vue';
+import { fileURLToPath, URL } from 'node:url'
+import { defineConfig } from 'vitest/config'
+import vue from '@vitejs/plugin-vue'
 
-const r = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
+const r = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
 
 export default defineConfig({
   plugins: [vue()],
@@ -29,4 +29,4 @@ export default defineConfig({
       reporter: ['text', 'html'],
     },
   },
-});
+})

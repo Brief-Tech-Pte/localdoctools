@@ -8,7 +8,12 @@
 
         <q-space />
         <q-btn flat dense icon="home" label="Home" :to="{ path: '/' }" class="q-mr-sm" />
-        <q-btn color="primary" unelevated label="Word → Markdown" :to="{ name: 'word-to-markdown' }" />
+        <q-btn
+          color="primary"
+          unelevated
+          label="Word → Markdown"
+          :to="{ name: 'word-to-markdown' }"
+        />
       </q-toolbar>
     </q-header>
 
@@ -43,11 +48,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref } from 'vue'
 
-const leftDrawerOpen = ref(false);
+const leftDrawerOpen = ref(false)
 
 function toggleLeftDrawer() {
-  leftDrawerOpen.value = !leftDrawerOpen.value;
+  leftDrawerOpen.value = !leftDrawerOpen.value
 }
 </script>

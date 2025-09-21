@@ -1,107 +1,119 @@
-// No static imports; this module uses dynamic imports to keep initial bundle small
+import mammoth from 'mammoth'
+import TurndownService from '@joplin/turndown'
+import { gfm } from '@joplin/turndown-plugin-gfm'
+import { parse } from 'node-html-parser'
 
 /**
  * DOCX to Markdown conversion service.
  *
- * All heavy business logic and dynamic imports live here to keep UI components lean and testable.
+ * Mirrors the logic of benbalter/word-to-markdown-js with a browser-friendly API.
  */
 
 export interface ConvertOptions {
   /** Inline images as data URLs in Markdown. Default: true */
-  inlineImages?: boolean;
+  inlineImages?: boolean
+  /** Override Mammoth options. `styleMap` merges with `styleMap`/`inlineImages`. */
+  mammoth?: Record<string, unknown>
   /** Optional Mammoth style map overrides. */
-  styleMap?: string[];
+  styleMap?: string[]
+  /** Optional Turndown options (subset). */
+  turndown?: TurndownOptions
+  /** Disable the markdown linting/cleanup step. */
+  lint?: boolean
 }
 
-let loaded = false;
+export interface TurndownOptions {
+  headingStyle?: 'setext' | 'atx'
+  codeBlockStyle?: 'indented' | 'fenced'
+  bulletListMarker?: '*' | '-' | '+'
+  emDelimiter?: '_' | '*'
+}
 
-// Structural types (kept local to avoid adding .d.ts files)
-type MammothImageEl = { read: (type: string) => Promise<string>; contentType: string };
-type MammothModule = {
-  convertToHtml: (
-    input: { arrayBuffer: ArrayBuffer },
-    options?: { styleMap?: string[]; convertImage?: unknown },
-  ) => Promise<{ value: string }>;
-  images: { inline: (handler: (el: MammothImageEl) => Promise<{ src: string }>) => unknown };
-};
-type TurndownCtor = new (options?: unknown) => { turndown: (html: string) => string };
+const defaultStyleMap = [
+  'p[style-name="Title"] => h1:fresh',
+  'p[style-name="Subtitle"] => h2:fresh',
+]
 
-let mammothMod: MammothModule | undefined;
-let TurndownServiceCtor: TurndownCtor | undefined;
+const defaultTurndownOptions: TurndownOptions = {
+  headingStyle: 'atx',
+  codeBlockStyle: 'fenced',
+  bulletListMarker: '-',
+}
 
-/**
- * Loads browser-friendly modules on-demand (cached after first call).
- */
-export async function ensureLoaded(): Promise<boolean> {
-  if (loaded) return true;
+type MammothInput = Parameters<typeof mammoth.convertToHtml>[0]
+
+function autoTableHeaders(html: string): string {
+  const root = parse(html)
+  root.querySelectorAll('table').forEach((table) => {
+    const firstRow = table.querySelector('tr')
+    if (!firstRow) return
+    firstRow.querySelectorAll('td').forEach((cell) => {
+      cell.tagName = 'th'
+    })
+  })
+  return root.toString()
+}
+
+function htmlToMd(html: string, options: TurndownOptions = {}): string {
+  const turndownService = new TurndownService({
+    ...options,
+    ...defaultTurndownOptions,
+  })
+  turndownService.use(gfm)
+  return turndownService.turndown(html).trim()
+}
+
+async function lintMarkdown(md: string, enabled: boolean): Promise<string> {
+  if (!enabled) return md.trim()
   try {
-    const m = (await import('mammoth')) as unknown as { default?: MammothModule } & MammothModule;
-    mammothMod = (m as { default?: MammothModule } & MammothModule).default ?? m;
-  } catch {
-    loaded = false;
-    return false;
+    const [markdownlintModule, helpersModule] = await Promise.all([
+      import('markdownlint'),
+      import('markdownlint-rule-helpers'),
+    ])
+    const markdownlint = markdownlintModule.default ?? markdownlintModule
+    const helpers = helpersModule.default ?? helpersModule
+    const lintResult = markdownlint.sync({ strings: { md } })
+    const fixed = helpers.applyFixes(md, lintResult['md'])
+    return (fixed ?? md).trim()
+  } catch (error) {
+    console.warn('Markdown linting skipped:', error)
+    return md.trim()
   }
-  try {
-    const t = (await import('turndown')) as unknown as { default?: TurndownCtor } & TurndownCtor;
-    TurndownServiceCtor = (t as { default?: TurndownCtor } & TurndownCtor).default ?? t;
-  } catch {
-    loaded = false;
-    return false;
+}
+
+function buildMammothOptions(opts: ConvertOptions): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    ...(opts.mammoth ?? {}),
   }
-  loaded = !!mammothMod && !!TurndownServiceCtor;
-  return loaded;
+  const styleMap =
+    opts.styleMap ?? (opts.mammoth?.styleMap as string[] | undefined) ?? defaultStyleMap
+  base.styleMap = styleMap
+
+  const shouldInlineImages = opts.inlineImages ?? true
+  if (shouldInlineImages && !base.convertImage) {
+    // base.convertImage = mammoth.images.inline(async (element: any) => {
+    //   const buffer = await element.read('base64')
+    //   const contentType = element.contentType
+    //   return { src: `data:${contentType};base64,${buffer}` }
+    // })
+  }
+
+  return base
 }
 
 /**
- * Returns whether dependencies are ready.
- */
-export function isReady(): boolean {
-  return loaded;
-}
-
-/**
- * Convert a DOCX ArrayBuffer to Markdown.
+ * Convert a DOCX source (buffer/path) to Markdown.
  */
 export async function convertDocxArrayBufferToMarkdown(
-  arrayBuffer: ArrayBuffer,
-  opts: ConvertOptions = {},
+  input: MammothInput,
+  opts: ConvertOptions = {}
 ): Promise<string> {
-  if (!loaded) {
-    const ok = await ensureLoaded();
-    if (!ok) throw new Error('Conversion dependencies are not available.');
-  }
-
-  if (!mammothMod || !TurndownServiceCtor) {
-    throw new Error('Conversion dependencies are not available.');
-  }
-
-  const styleMap: string[] = opts.styleMap ?? [
-    'p[style-name="Title"] => h1:fresh',
-    'p[style-name="Subtitle"] => h2:fresh',
-  ];
-
-  const result = await mammothMod.convertToHtml(
-    { arrayBuffer },
-    {
-      styleMap,
-      convertImage:
-        (opts.inlineImages ?? true)
-          ? mammothMod.images.inline(async (element: MammothImageEl) => {
-              const buffer = await element.read('base64');
-              const contentType = element.contentType;
-              return { src: `data:${contentType};base64,${buffer}` };
-            })
-          : undefined,
-    },
-  );
-
-  const html: string = result?.value ?? '';
-  const turndown = new TurndownServiceCtor({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    emDelimiter: '*',
-  });
-  return turndown.turndown(html);
+  const mammothOptions = buildMammothOptions(opts)
+  const mammothResult = await mammoth.convertToHtml(input, mammothOptions)
+  const html = autoTableHeaders(mammothResult.value ?? '')
+  const md = htmlToMd(html, opts.turndown)
+  const linted = await lintMarkdown(md, opts.lint !== false)
+  return linted
 }
 
 /**
@@ -109,8 +121,8 @@ export async function convertDocxArrayBufferToMarkdown(
  */
 export async function convertDocxFileToMarkdown(
   file: File,
-  opts?: ConvertOptions,
+  opts?: ConvertOptions
 ): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  return convertDocxArrayBufferToMarkdown(buffer, opts);
+  const buffer = await file.arrayBuffer()
+  return convertDocxArrayBufferToMarkdown({ arrayBuffer: buffer }, opts)
 }

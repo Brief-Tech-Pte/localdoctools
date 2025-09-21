@@ -32,10 +32,6 @@
               <q-btn flat color="primary" class="q-ml-sm" label="Clear" @click="reset" />
             </div>
             <div v-if="error" class="text-negative q-mt-md">{{ error }}</div>
-            <div v-if="!depsReady" class="text-warning q-mt-md">
-              To enable conversion, please install dependencies: <code>mammoth</code> and
-              <code>turndown</code>.
-            </div>
           </q-card-section>
         </q-card>
 
@@ -90,67 +86,58 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { ensureLoaded, isReady, convertDocxFileToMarkdown } from 'src/services/docxToMarkdown';
+import { ref } from 'vue'
+import { convertDocxFileToMarkdown } from 'src/services/docxToMarkdown'
 
-const file = ref<File | null>(null);
-const markdown = ref<string>('');
-const error = ref<string>('');
-const converting = ref<boolean>(false);
-const depsReady = ref<boolean>(false);
-
-onMounted(async () => {
-  depsReady.value = await ensureLoaded();
-});
+const file = ref<File | null>(null)
+const markdown = ref<string>('')
+const error = ref<string>('')
+const converting = ref<boolean>(false)
 
 function onFile() {
-  error.value = '';
-  markdown.value = '';
+  error.value = ''
+  markdown.value = ''
 }
 
 function reset() {
-  file.value = null;
-  error.value = '';
-  markdown.value = '';
+  file.value = null
+  error.value = ''
+  markdown.value = ''
 }
 
 async function convert() {
-  error.value = '';
-  markdown.value = '';
-  if (!file.value) return;
-  if (!isReady()) {
-    error.value = 'Missing dependencies. Please install mammoth and turndown.';
-    return;
-  }
-  converting.value = true;
+  error.value = ''
+  markdown.value = ''
+  if (!file.value) return
+  converting.value = true
   try {
     markdown.value = await convertDocxFileToMarkdown(file.value, {
       inlineImages: true,
-    });
+    })
   } catch (e: unknown) {
-    console.error(e);
-    const msg = e instanceof Error ? e.message : String(e);
-    error.value = msg || 'Failed to convert document.';
+    console.error(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    error.value = msg || 'Failed to convert document.'
   } finally {
-    converting.value = false;
+    converting.value = false
   }
 }
 
 async function copyMarkdown() {
-  if (!markdown.value) return;
-  await navigator.clipboard.writeText(markdown.value);
+  if (!markdown.value) return
+  await navigator.clipboard.writeText(markdown.value)
 }
 
 function downloadMarkdown() {
-  if (!markdown.value) return;
-  const blob = new Blob([markdown.value], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const baseName = (file.value?.name || 'document').replace(/\.[^.]+$/, '');
-  a.href = url;
-  a.download = `${baseName}.md`;
-  a.click();
-  URL.revokeObjectURL(url);
+  if (!markdown.value) return
+  const blob = new Blob([markdown.value], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const baseName = (file.value?.name || 'document').replace(/\.[^.]+$/, '')
+  a.href = url
+  a.download = `${baseName}.md`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 </script>
 
