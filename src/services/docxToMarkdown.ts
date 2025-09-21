@@ -37,10 +37,8 @@ const defaultStyleMap = [
 const defaultTurndownOptions: TurndownOptions = {
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
-  bulletListMarker: '-'
+  bulletListMarker: '-',
 }
-
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined'
 
 type MammothInput = Parameters<typeof mammoth.convertToHtml>[0]
 
