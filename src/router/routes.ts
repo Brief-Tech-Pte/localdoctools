@@ -4,7 +4,14 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
-    children: [{ path: '', component: () => import('pages/IndexPage.vue') }],
+    children: [
+      { path: '', component: () => import('pages/IndexPage.vue') },
+      {
+        path: 'tools/word-to-markdown',
+        name: 'word-to-markdown',
+        component: () => import('pages/WordToMarkdown.vue'),
+      },
+    ],
   },
 
   // Always leave this as last one,
