@@ -18,7 +18,7 @@ export interface ConvertOptions {
   styleMap?: string[]
   /** Optional Turndown options (subset). */
   turndown?: TurndownOptions
-  /** Disable linting pass (always skipped in browsers). */
+  /** Disable the markdown linting/cleanup step. */
   lint?: boolean
 }
 
@@ -37,8 +37,7 @@ const defaultStyleMap = [
 const defaultTurndownOptions: TurndownOptions = {
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
-  bulletListMarker: '-',
-  emDelimiter: '*',
+  bulletListMarker: '-'
 }
 
 const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined'
@@ -67,7 +66,7 @@ function htmlToMd(html: string, options: TurndownOptions = {}): string {
 }
 
 async function lintMarkdown(md: string, enabled: boolean): Promise<string> {
-  if (!enabled || isBrowser) return md.trim()
+  if (!enabled) return md.trim()
   try {
     const [markdownlintModule, helpersModule] = await Promise.all([
       import('markdownlint'),

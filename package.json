@@ -18,17 +18,17 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@joplin/turndown-plugin-gfm": "^1.0.63",
+    "@joplin/turndown-plugin-gfm": "^1.0.54",
     "@quasar/extras": "^1.16.4",
-    "mammoth": "^1.11.0",
-    "node-html-parser": "^7.0.1",
+    "mammoth": "^1.6.0",
+    "node-html-parser": "^6.1.12",
     "quasar": "^2.16.0",
     "turndown": "^7.2.1",
     "vue": "3.5.20",
     "vue-router": "^4.0.12",
-    "@joplin/turndown": "^4.0.81",
-    "markdownlint": "^0.35.0",
-    "markdownlint-rule-helpers": "^0.20.0"
+    "@joplin/turndown": "^4.0.72",
+    "markdownlint": "^0.33.0",
+    "markdownlint-rule-helpers": "^0.24.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
