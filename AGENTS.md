@@ -15,7 +15,8 @@
 5. Format code on demand with `npm run format` (Prettier is also configured for format-on-save in VS Code).
 6. Run unit tests with `npm run test` (CI mode) or `npm run test:watch` during development.
 7. Generate a coverage report for Codecov with `npm run test:coverage` when requested.
-8. Check for build issues with `npx vue-tsc --noEmit`
+8. Regenerate favicons/app icons with `npm run icons` (requires global `icongenie` and ImageMagick's `magick` binary) whenever the base SVG changes.
+9. Check for build issues with `npx vue-tsc --noEmit`
 
 ## Coding Standards
 

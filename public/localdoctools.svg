@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Document outline -->
+  <path d="M128 64 H344 L432 152 V432 A48 48 0 0 1 384 480 H128 A48 48 0 0 1 80 432 V112 A48 48 0 0 1 128 64 Z"
+        fill="transparent" stroke="#1f2937" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Folded corner -->
+  <path d="M344 64 L432 152 H376 A32 32 0 0 1 344 120 V64 Z"
+        fill="#eef2ff" stroke="#1f2937" stroke-width="20" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Text lines -->
+  <rect x="152" y="210" width="172" height="24" rx="12" ry="12" fill="#374151" fill-opacity="0.9"/>
+  <rect x="152" y="260" width="208" height="24" rx="12" ry="12" fill="#374151" fill-opacity="0.9"/>
+  <rect x="152" y="310" width="148" height="24" rx="12" ry="12" fill="#374151" fill-opacity="0.9"/>
+  <!-- Shield (privacy) -->
+  <path d="M340 306 c16 10 34 14 50 16 v60 c0 36 -21 60 -50 70 c-29 -10 -50 -34 -50 -70 v-54 c16 -2 34 -6 50 -16 z"
+        fill="#2563eb" fill-opacity="0.16"/>
+  <!-- Target mark (tools/focus) - absolute positions (center ~ 400, 416) -->
+  <circle cx="400" cy="416" r="56" fill="transparent" stroke="#2563eb" stroke-width="16"/>
+  <circle cx="400" cy="416" r="24" fill="transparent" stroke="#2563eb" stroke-width="16"/>
+  <circle cx="400" cy="416" r="4" fill="#2563eb"/>
+  <rect x="396" y="350" width="8" height="22" rx="4" ry="4" fill="#2563eb"/>
+  <rect x="396" y="460" width="8" height="22" rx="4" ry="4" fill="#2563eb"/>
+  <rect x="446" y="412" width="22" height="8" rx="4" ry="4" fill="#2563eb"/>
+  <rect x="332" y="412" width="22" height="8" rx="4" ry="4" fill="#2563eb"/>
+</svg>
