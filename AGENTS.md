@@ -14,7 +14,8 @@
 4. Lint before submitting changes: `npm run lint`.
 5. Format code on demand with `npm run format` (Prettier is also configured for format-on-save in VS Code).
 6. Run unit tests with `npm run test` (CI mode) or `npm run test:watch` during development.
-7. Check for build issues with `npx vue-tsc --noEmit`
+7. Generate a coverage report for Codecov with `npm run test:coverage` when requested.
+8. Check for build issues with `npx vue-tsc --noEmit`
 
 ## Coding Standards
 

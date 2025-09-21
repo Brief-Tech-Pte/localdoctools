@@ -40,6 +40,12 @@ npm run test
 npm run test:watch
 ```
 
+Generate a coverage report (saved under `coverage/`) with:
+
+```bash
+npm run test:coverage
+```
+
 ### Build the app for production
 
 ```bash
