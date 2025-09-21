@@ -40,7 +40,7 @@
 - Word -> Markdown (`src/tools/word-to-markdown/components/WordToMarkdownPage.vue`) is the current flagship tool. It dynamically imports browser builds of `mammoth` and `turndown`; follow this pattern for large, browser-only libraries to keep initial bundles lean and to preserve local-only processing.
 - PDF Redaction (`src/tools/pdf-redaction`) now renders pages with pdf.js, supports drawing rectangles directly on the preview, and burns redactions into a rasterized PDF. OCR integration is still pending.
 - Respect privacy/air-gapped design: never introduce backend services, telemetry, or third-party network calls. All document handling must stay in-browser.
-- When adding download or clipboard features, use standard browser APIs and release resources (e.g., revoke object URLs) as done in existing code.
+- When adding download or clipboard features, prefer Quasar's `exportFile` for generating downloads Continue to use standard browser Clipboard APIs for copy operations.
 - Update navigation (layout drawer + header chips) when adding new routes so tools surface consistently.
 
 ## Styling Guidelines
