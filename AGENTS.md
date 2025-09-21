@@ -29,14 +29,15 @@
 ## Project Structure
 
 - `src/layouts`: App shells (`MainLayout.vue`) wrapping route views.
-- `src/pages`: Route-level views. Add new tools as separate pages and register them in `src/router/routes.ts` using lazy imports.
+- `src/pages`: Route-level views for core app pages (home, error, etc.).
+- `src/tools`: Feature packages. Each tool keeps its pages/components, business logic, tests, and assets together.
 - `src/components`: Reusable UI pieces; follow PascalCase names.
 - `src/boot`: Boot files array is currently empty. Only add boot files when absolutely required for cross-cutting concerns.
 - Assets live under `src/assets`; public favicons reside in `public/icons`.
 
 ## Feature Conventions
 
-- Word -> Markdown (`src/pages/WordToMarkdown.vue`) is the current flagship tool. It dynamically imports browser builds of `mammoth` and `turndown`; follow this pattern for large, browser-only libraries to keep initial bundles lean and to preserve local-only processing.
+- Word -> Markdown (`src/tools/word-to-markdown/components/WordToMarkdownPage.vue`) is the current flagship tool. It dynamically imports browser builds of `mammoth` and `turndown`; follow this pattern for large, browser-only libraries to keep initial bundles lean and to preserve local-only processing.
 - Respect privacy/air-gapped design: never introduce backend services, telemetry, or third-party network calls. All document handling must stay in-browser.
 - When adding download or clipboard features, use standard browser APIs and release resources (e.g., revoke object URLs) as done in existing code.
 - Update navigation (layout drawer + header chips) when adding new routes so tools surface consistently.
@@ -62,6 +63,6 @@
 
 ## When In Doubt
 
-- Mirror existing patterns in `src/pages/WordToMarkdown.vue` for new tool flows (local processing, guarded dynamic imports, Quasar-first UI).
+- Mirror existing patterns in `src/tools/word-to-markdown` for new tool flows (local processing, guarded dynamic imports, Quasar-first UI).
 - Ask whether a change affects privacy guarantees; if so, consult maintainers before merging.
 - If adding third-party libraries, prefer ones with browser-friendly bundles and no transitive network requirements.

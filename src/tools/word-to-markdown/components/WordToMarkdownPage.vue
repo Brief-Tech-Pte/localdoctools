@@ -87,7 +87,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { convertDocxFileToMarkdown } from 'src/services/docxToMarkdown'
+import { convertDocxFileToMarkdown } from '../services/docxToMarkdown'
 
 const file = ref<File | null>(null)
 const markdown = ref<string>('')

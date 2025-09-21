@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { toolRoutes } from 'src/tools'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -6,11 +7,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('layouts/MainLayout.vue'),
     children: [
       { path: '', component: () => import('pages/IndexPage.vue') },
-      {
-        path: 'tools/word-to-markdown',
-        name: 'word-to-markdown',
-        component: () => import('pages/WordToMarkdown.vue'),
-      },
+      ...toolRoutes,
     ],
   },
 
