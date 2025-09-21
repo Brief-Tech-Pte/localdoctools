@@ -32,10 +32,6 @@
               <q-btn flat color="primary" class="q-ml-sm" label="Clear" @click="reset" />
             </div>
             <div v-if="error" class="text-negative q-mt-md">{{ error }}</div>
-            <div v-if="!depsReady" class="text-warning q-mt-md">
-              To enable conversion, please install dependencies: <code>mammoth</code> and
-              <code>turndown</code>.
-            </div>
           </q-card-section>
         </q-card>
 
@@ -90,18 +86,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { ensureLoaded, isReady, convertDocxFileToMarkdown } from 'src/services/docxToMarkdown';
+import { ref } from 'vue';
+import { convertDocxFileToMarkdown } from 'src/services/docxToMarkdown';
 
 const file = ref<File | null>(null);
 const markdown = ref<string>('');
 const error = ref<string>('');
 const converting = ref<boolean>(false);
-const depsReady = ref<boolean>(false);
-
-onMounted(async () => {
-  depsReady.value = await ensureLoaded();
-});
 
 function onFile() {
   error.value = '';
@@ -118,10 +109,6 @@ async function convert() {
   error.value = '';
   markdown.value = '';
   if (!file.value) return;
-  if (!isReady()) {
-    error.value = 'Missing dependencies. Please install mammoth and turndown.';
-    return;
-  }
   converting.value = true;
   try {
     markdown.value = await convertDocxFileToMarkdown(file.value, {
