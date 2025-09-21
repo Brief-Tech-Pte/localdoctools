@@ -9,10 +9,14 @@
         <q-space />
         <q-btn flat dense icon="home" label="Home" :to="{ path: '/' }" class="q-mr-sm" />
         <q-btn
+          v-for="tool in toolsList"
+          :key="tool.id"
           color="primary"
           unelevated
-          label="Word → Markdown"
-          :to="{ name: 'word-to-markdown' }"
+          class="q-ml-sm"
+          :icon="tool.icon"
+          :label="tool.label"
+          :to="{ name: tool.route.name }"
         />
       </q-toolbar>
     </q-header>
@@ -30,16 +34,25 @@
           </q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple :to="{ name: 'word-to-markdown' }">
+        <q-item
+          v-for="tool in toolsList"
+          :key="tool.id"
+          clickable
+          v-ripple
+          :to="{ name: tool.route.name }"
+        >
           <q-item-section avatar>
-            <q-icon name="description" />
+            <q-icon :name="tool.icon" />
           </q-item-section>
           <q-item-section>
-            <q-item-label>Word → Markdown</q-item-label>
+            <q-item-label>{{ tool.label }}</q-item-label>
+            <q-item-label v-if="tool.shortDescription" caption>
+              {{ tool.shortDescription }}
+            </q-item-label>
           </q-item-section>
         </q-item>
-      </q-list>
-    </q-drawer>
+     </q-list>
+   </q-drawer>
 
     <q-page-container>
       <router-view />
@@ -50,7 +63,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
+import { tools } from 'src/tools'
+
 const leftDrawerOpen = ref(false)
+const toolsList = tools
 
 function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value

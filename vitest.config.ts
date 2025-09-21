@@ -15,9 +15,8 @@ export default defineConfig({
       pages: r('./src/pages'),
       assets: r('./src/assets'),
       boot: r('./src/boot'),
-      services: r('./src/services'),
       router: r('./src/router'),
-      types: r('./src/types'),
+      tools: r('./src/tools'),
     },
   },
   test: {

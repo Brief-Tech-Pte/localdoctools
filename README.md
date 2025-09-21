@@ -52,6 +52,14 @@ npm run test:coverage
 quasar build
 ```
 
+### Regenerate icons
+
+Requires global tools: `icongenie` (`npm install -g @quasar/icongenie`) and ImageMagick's `magick` binary available on your PATH.
+
+```bash
+npm run icons
+```
+
 ### Customize the configuration
 
 See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js).

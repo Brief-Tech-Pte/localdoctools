@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { convertDocxArrayBufferToMarkdown } from 'src/services/docxToMarkdown'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { convertDocxArrayBufferToMarkdown } from '../services/docxToMarkdown'
 
 const expectations: Record<string, string> = {
   em: 'This word is _italic_.',
@@ -23,7 +24,7 @@ const expectations: Record<string, string> = {
   'file with space': 'This is paragraph text.',
 }
 
-const fixturesRoot = join(process.cwd(), 'tests', 'fixtures')
+const fixturesRoot = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
 describe('docx to markdown fixtures', () => {
   for (const [fixture, expected] of Object.entries(expectations)) {
