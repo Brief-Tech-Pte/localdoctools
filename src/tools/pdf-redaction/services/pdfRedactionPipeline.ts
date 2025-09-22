@@ -128,7 +128,7 @@ function groupMarksByPage(marks: RedactionMark[]): Map<number, RedactionRect[]> 
 
 async function renderPageWithMasks(
   page: PdfJsTypes.PDFPageProxy,
-  viewport: { width: number; height: number; scale: number },
+  viewport: PdfJsTypes.PageViewport,
   rects: RedactionRect[]
 ): Promise<{ imageBytes: Uint8Array; widthPt: number; heightPt: number }> {
   const canvas = createCanvas(viewport.width, viewport.height)
@@ -138,8 +138,9 @@ async function renderPageWithMasks(
   }
 
   const renderTask = page.render({
-    canvasContext: context as unknown as CanvasRenderingContext2D,
+    canvasContext: context,
     viewport,
+    canvas,
   })
   await renderTask.promise
 
@@ -163,7 +164,7 @@ async function renderPageWithMasks(
 function drawMaskRect(
   context: CanvasRenderingContext2D,
   rect: RedactionRect,
-  viewport: { width: number; height: number; scale: number }
+  viewport: PdfJsTypes.PageViewport
 ) {
   const scale = viewport.scale
   const width = Math.max(rect.width * scale, CANVAS_MIN_SIZE)

@@ -27,7 +27,7 @@
     "markdownlint-rule-helpers": "^0.24.0",
     "node-html-parser": "^6.1.12",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^4.6.82",
+    "pdfjs-dist": "^5.0.0",
     "quasar": "^2.16.0",
     "turndown": "^7.2.1",
     "vue": "3.5.20",

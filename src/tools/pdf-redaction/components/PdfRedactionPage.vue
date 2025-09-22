@@ -380,8 +380,9 @@ async function renderCurrentPage() {
   canvas.style.height = `${viewport.height}px`
 
   const task = page.render({
-    canvasContext: context as unknown as CanvasRenderingContext2D,
+    canvasContext: context,
     viewport,
+    canvas,
   })
   renderTask = task
 
