@@ -140,6 +140,7 @@ async function renderPageWithMasks(
   const renderTask = page.render({
     canvasContext: context,
     viewport,
+    canvas,
   })
   await renderTask.promise
 

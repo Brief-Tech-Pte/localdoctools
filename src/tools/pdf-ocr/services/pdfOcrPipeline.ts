@@ -13,6 +13,10 @@ import type {
 const MIN_CONFIDENCE = 40
 const POINTS_PER_INCH = 72
 const MIN_OCR_DIMENSION = 16
+const TESSERACT_WORKER_PATH = '/tesseract/worker.min.js'
+const TESSERACT_CORE_PATH = '/tesseract/core/'
+const TESSERACT_LANG_PATH = '/tesseract/4.0.0/'
+const BUNDLED_LANGUAGES = new Set(['eng', 'fra', 'deu', 'osd'])
 
 type PdfJsModule = typeof PdfJsTypes
 type PdfLibModule = typeof PdfLibTypes
@@ -57,8 +61,9 @@ export async function createSearchablePdf(
     }
 
     await page.render({
-      canvasContext: context as unknown as CanvasRenderingContext2D,
+      canvasContext: context,
       viewport,
+      canvas, // some pdf.js type definitions require the canvas element alongside the context
     }).promise
 
     reportProgress(options.onProgress, pageIndex, 'ocr', 0.3)
@@ -140,19 +145,41 @@ async function ensurePdfLib(): Promise<PdfLibModule> {
   return pdfLibModule
 }
 
+function normalizeLanguage(language: string): string {
+  const codes = language
+    .split('+')
+    .map((code) => code.trim().toLowerCase())
+    .filter((code) => code.length > 0)
+  if (!codes.length) {
+    throw new Error('No OCR language provided.')
+  }
+  const missingCodes = codes.filter((code) => !BUNDLED_LANGUAGES.has(code))
+  if (missingCodes.length) {
+    const available = Array.from(BUNDLED_LANGUAGES).sort().join(', ')
+    throw new Error(
+      `OCR language data not bundled for: ${missingCodes.join(', ')}. Available languages: ${available}.`
+    )
+  }
+  return codes.join('+')
+}
+
 async function ensureTesseractWorker(language: string): Promise<TesseractWorker> {
-  if (tesseractWorker && workerLanguage === language) {
+  const normalizedLanguage = normalizeLanguage(language)
+  if (tesseractWorker) {
+    if (workerLanguage !== normalizedLanguage) {
+      await tesseractWorker.reinitialize(normalizedLanguage)
+      workerLanguage = normalizedLanguage
+    }
     return tesseractWorker
   }
-  if (tesseractWorker) {
-    await tesseractWorker.terminate()
-    tesseractWorker = null
-  }
   const { createWorker } = await import('tesseract.js')
-  const worker = await createWorker()
-  // Tesseract.js v5 typings prefer `reinitialize` for setting language.
-  await worker.reinitialize(language)
-  workerLanguage = language
+  const worker = await createWorker(normalizedLanguage, undefined, {
+    workerPath: TESSERACT_WORKER_PATH,
+    corePath: TESSERACT_CORE_PATH,
+    langPath: TESSERACT_LANG_PATH,
+    cachePath: 'tesseract',
+  })
+  workerLanguage = normalizedLanguage
   tesseractWorker = worker
   return worker
 }
