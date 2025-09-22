@@ -12,7 +12,7 @@ import type {
 
 const MIN_CONFIDENCE = 40
 const POINTS_PER_INCH = 72
-const MIN_OCR_DIMENSION = 16
+export const MIN_OCR_DIMENSION = 16
 const TESSERACT_WORKER_PATH = '/tesseract/worker.min.js'
 const TESSERACT_CORE_PATH = '/tesseract/core/'
 const TESSERACT_LANG_PATH = '/tesseract/4.0.0/'
@@ -63,14 +63,14 @@ export async function createSearchablePdf(
     await page.render({
       canvasContext: context,
       viewport,
-      canvas, // some pdf.js type definitions require the canvas element alongside the context
+      canvas,
     }).promise
 
     reportProgress(options.onProgress, pageIndex, 'ocr', 0.3)
 
     let words: OcrWord[] = []
     let fullText = ''
-    if (canvas.width < MIN_OCR_DIMENSION || canvas.height < MIN_OCR_DIMENSION) {
+    if (shouldSkipOcr(canvas.width, canvas.height)) {
       warnings.push(
         `Skipped OCR on page ${pageIndex + 1}: rendered size ${canvas.width}x${canvas.height} too small.`
       )
@@ -128,7 +128,7 @@ async function ensurePdfJs(): Promise<PdfJsModule> {
   }
   const [module, workerModule] = await Promise.all([
     import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker?worker'),
+    import('pdfjs-dist/build/pdf.worker.mjs?worker'),
   ])
   if (!pdfWorker) {
     pdfWorker = new workerModule.default()
@@ -184,7 +184,7 @@ async function ensureTesseractWorker(language: string): Promise<TesseractWorker>
   return worker
 }
 
-async function recognizeCanvas(
+export async function recognizeCanvas(
   worker: TesseractWorker,
   canvas: HTMLCanvasElement
 ): Promise<{ words: OcrWord[]; fullText: string } | { error: string }> {
@@ -249,6 +249,10 @@ export function mapWordToPdf(word: OcrWord, scaleFactor: number, pageHeightPt: n
     height,
     fontSize,
   }
+}
+
+export function shouldSkipOcr(width: number, height: number, minDimension = MIN_OCR_DIMENSION) {
+  return width < minDimension || height < minDimension
 }
 
 function reportProgress(

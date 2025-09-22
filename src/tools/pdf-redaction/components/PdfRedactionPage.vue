@@ -108,6 +108,12 @@
                 <div class="text-caption text-grey-7">
                   Page {{ activePageDisplay }} / {{ totalPagesDisplay }}
                 </div>
+                <q-toggle
+                  v-model="textSelectMode"
+                  color="primary"
+                  :disable="!hasDocument"
+                  label="Text select"
+                />
                 <q-btn
                   flat
                   dense
@@ -126,8 +132,17 @@
                 <canvas ref="pageCanvas" class="page-canvas" />
                 <div
                   v-if="currentViewport"
+                  ref="textLayerRef"
+                  class="textLayer"
+                  :class="{ enabled: textSelectMode }"
+                  @mouseup="onTextSelectionEnd"
+                  @touchend="onTextSelectionEnd"
+                />
+                <div
+                  v-if="currentViewport"
                   ref="overlayRef"
                   class="page-overlay"
+                  :class="{ disabled: textSelectMode }"
                   @pointerdown="onOverlayPointerDown"
                   @pointermove="onOverlayPointerMove"
                   @pointerup="onOverlayPointerUp"
@@ -167,13 +182,18 @@
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { exportFile } from 'quasar'
 
+import * as pdfjsLib from 'pdfjs-dist'
 import type * as PdfJsTypes from 'pdfjs-dist'
+import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer.mjs'
+// import 'pdfjs-dist/web/pdf_viewer.css'
 import type { PdfRedactionProgress, RedactionMark, RedactionRect } from '../types/redaction'
 import {
   buildRedactionSpec,
   computeFileHash,
   createRedactedPdf,
 } from '../services/pdfRedactionPipeline'
+// Using core helper renderTextLayer from pdf.js v5; no viewer types needed
+// import type { TextLayerBuilderRenderOptions } from 'pdfjs-dist/types/web/text_layer_builder'
 
 type PdfJsModule = typeof PdfJsTypes
 type PDFDocumentProxy = PdfJsTypes.PDFDocumentProxy
@@ -196,11 +216,14 @@ const maxPageIndex = ref(0)
 const pageCanvas = ref<HTMLCanvasElement | null>(null)
 const overlayRef = ref<HTMLDivElement | null>(null)
 const viewerRef = ref<HTMLDivElement | null>(null)
+const textLayerRef = ref<HTMLDivElement | null>(null)
 const currentViewport = ref<{ width: number; height: number; scale: number } | null>(null)
 
 const drawingState = ref<{ x: number; y: number; width: number; height: number } | null>(null)
 const drawingPointerId = ref<number | null>(null)
 const pointerOrigin = ref<{ x: number; y: number } | null>(null)
+
+const textSelectMode = ref(false)
 
 const resizeTimeout = ref<number | undefined>()
 // Guards async file loading/hash/renders from racing. Increment for each new selection.
@@ -402,6 +425,11 @@ async function renderCurrentPage() {
     height: viewport.height,
     scale,
   }
+
+  // Render or refresh text layer
+  // Wait a tick so the v-if="currentViewport" text layer mount reflects in the DOM
+  await nextTick()
+  await doRenderTextLayer(page, viewport)
 }
 
 function cancelRenderTask() {
@@ -419,16 +447,13 @@ async function ensurePdfJs(): Promise<PdfJsModule> {
   if (pdfjsModule && pdfWorkerInstance) {
     return pdfjsModule
   }
-  const [module, workerModule] = await Promise.all([
-    import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker?worker'),
-  ])
+  const workerModule = await import('pdfjs-dist/build/pdf.worker.mjs?worker')
   if (!pdfWorkerInstance) {
     pdfWorkerInstance = new workerModule.default()
   }
-  module.GlobalWorkerOptions.workerPort = pdfWorkerInstance
-  pdfjsModule = module
-  return module
+  pdfjsLib.GlobalWorkerOptions.workerPort = pdfWorkerInstance
+  pdfjsModule = pdfjsLib
+  return pdfjsModule
 }
 
 function goToPreviousPage() {
@@ -442,6 +467,9 @@ function goToNextPage() {
     activePageIndex.value += 1
   }
 }
+
+// Ensure the viewer module can access the core namespace
+;(globalThis as unknown as { pdfjsLib?: typeof pdfjsLib }).pdfjsLib = pdfjsLib
 
 function clampPageNumber(value: number) {
   const pageCount = maxPageIndex.value + 1
@@ -459,6 +487,7 @@ function handleResize() {
 
 function onOverlayPointerDown(event: PointerEvent) {
   if (!currentViewport.value || !overlayRef.value) return
+  if (textSelectMode.value) return // disable rectangle drawing while in text select mode
   if (drawingPointerId.value !== null) return
   overlayRef.value.setPointerCapture(event.pointerId)
   drawingPointerId.value = event.pointerId
@@ -515,6 +544,127 @@ function finalizeDrawing(shouldPersist: boolean) {
   })
   statusMessage.value = 'Added redaction rectangle.'
   statusVariant.value = 'success'
+}
+
+async function doRenderTextLayer(page: PdfJsTypes.PDFPageProxy, viewport: PdfJsTypes.PageViewport) {
+  // Always keep a text layer DOM in sync so selection rectangles align with the overlay
+  let node = textLayerRef.value
+  if (!node) {
+    // The element is conditionally rendered by currentViewport; wait a tick and retry
+    await nextTick()
+    node = textLayerRef.value
+  }
+  if (!node) return
+  // Clear previous content and builder
+  node.innerHTML = ''
+
+  try {
+    // v5 recommended: use TextLayerBuilder (from viewer package)
+    // Ensure container matches viewport dimensions for correct positioning
+    node.style.width = `${viewport.width}px`
+    node.style.height = `${viewport.height}px`
+    const textLayer = new pdfjsViewer.TextLayerBuilder({ pdfPage: page })
+    textLayer.div = node
+    await textLayer.render({ viewport })
+  } catch (e) {
+    console.warn('Failed to render text layer; text selection redaction disabled for this page.', e)
+  }
+}
+
+function onTextSelectionEnd() {
+  if (!textSelectMode.value || !textLayerRef.value || !currentViewport.value) return
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed) return
+
+  // Ensure the selection is within our text layer
+  const anchorNode = selection.anchorNode
+  const focusNode = selection.focusNode
+  const layer = textLayerRef.value
+  if (!anchorNode || !focusNode) return
+  if (!layer.contains(anchorNode) || !layer.contains(focusNode)) return
+
+  const range = selection.rangeCount ? selection.getRangeAt(0) : null
+  if (!range) return
+
+  const rectList = range.getClientRects()
+  if (!rectList.length) return
+
+  const overlay = overlayRef.value
+  if (!overlay) return
+  const bounds = overlay.getBoundingClientRect()
+
+  // Build overlay-space rectangles from selection boxes
+  const overlayRectsLocal: Array<{ x: number; y: number; width: number; height: number }> = []
+  for (const r of Array.from(rectList)) {
+    const x = clamp(r.left - bounds.left, 0, currentViewport.value.width)
+    const y = clamp(r.top - bounds.top, 0, currentViewport.value.height)
+    const w = clamp(r.width, 0, currentViewport.value.width - x)
+    const h = clamp(r.height, 0, currentViewport.value.height - y)
+    if (w > 1 && h > 1) overlayRectsLocal.push({ x, y, width: w, height: h })
+  }
+
+  if (!overlayRectsLocal.length) return
+
+  // Merge near-collinear boxes on the same line to reduce fragmentation
+  const merged = mergeLineBoxes(overlayRectsLocal)
+  const pdfRects: RedactionRect[] = []
+  for (const or of merged) {
+    const pdfRect = convertOverlayRectToPdf(or)
+    if (pdfRect) pdfRects.push(pdfRect)
+  }
+  if (!pdfRects.length) return
+
+  redactionMarks.value.push({
+    id: crypto.randomUUID(),
+    pageIndex: activePageIndex.value,
+    rects: pdfRects,
+  })
+  statusMessage.value = 'Added redaction from selected text.'
+  statusVariant.value = 'success'
+
+  // Clear selection for better UX
+  selection.removeAllRanges()
+}
+
+type Box = { x: number; y: number; width: number; height: number }
+function mergeLineBoxes(boxes: Box[]): Box[] {
+  // Group by approximate y (line). Tolerance in pixels.
+  const tol = 3
+  const groups: Box[][] = []
+  const sorted = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)
+  for (const b of sorted) {
+    const g = groups.find((g) => {
+      if (!g.length) return false
+      const first = g[0]!
+      return Math.abs(first.y - b.y) <= tol
+    })
+    if (g) {
+      g.push(b)
+    } else {
+      groups.push([b])
+    }
+  }
+  const merged: Box[] = []
+  for (const g of groups) {
+    if (!g.length) continue
+    const first: Box = g[0] as Box
+    // Merge overlapping/adjacent horizontally
+    let current: Box = { x: first.x, y: first.y, width: first.width, height: first.height }
+    for (let i = 1; i < g.length; i++) {
+      const b = g[i] as Box
+      if (b.x <= current.x + current.width + 4) {
+        const right = Math.max(current.x + current.width, b.x + b.width)
+        current.width = right - current.x
+        current.y = Math.min(current.y, b.y)
+        current.height = Math.max(current.height, b.height)
+      } else {
+        merged.push(current)
+        current = { x: b.x, y: b.y, width: b.width, height: b.height }
+      }
+    }
+    merged.push(current)
+  }
+  return merged
 }
 
 function getRelativePoint(event: PointerEvent) {
@@ -659,6 +809,8 @@ function serializeMarks(marks: Array<RedactionMark & { id: string }>): Redaction
   display: block;
   width: 100%;
   height: auto;
+  position: relative;
+  z-index: 0;
 }
 
 .page-overlay {
@@ -692,5 +844,45 @@ function serializeMarks(marks: Array<RedactionMark & { id: string }>): Redaction
   max-height: 320px;
   overflow: auto;
   font-size: 0.75rem;
+}
+
+/* Text layer for selection */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+  /* Hide text glyphs but allow selection highlight */
+  color: transparent;
+}
+.textLayer.enabled {
+  pointer-events: auto;
+  user-select: text;
+}
+
+/* Position text spans generated by TextLayerBuilder */
+.textLayer > span {
+  position: absolute;
+  transform-origin: 0% 0%;
+  white-space: pre;
+}
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+/* Optional: visible selection highlight */
+.textLayer ::selection {
+  background: rgba(33, 150, 243, 0.25);
+}
+
+/* Disable drawing overlay when in text select mode */
+.page-overlay.disabled {
+  pointer-events: none;
+  cursor: text;
+  z-index: 2;
 }
 </style>

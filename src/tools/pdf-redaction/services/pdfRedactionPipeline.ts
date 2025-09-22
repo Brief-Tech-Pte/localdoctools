@@ -196,7 +196,7 @@ async function ensurePdfJs(): Promise<PdfJsModule> {
   }
   const [module, workerModule] = await Promise.all([
     import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker?worker'),
+    import('pdfjs-dist/build/pdf.worker.mjs?worker'),
   ])
   if (!pdfWorker) {
     pdfWorker = new workerModule.default()
