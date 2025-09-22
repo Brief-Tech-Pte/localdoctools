@@ -5,6 +5,7 @@ export const pdfRedactionTool: ToolDefinition = {
   label: 'PDF Redaction',
   icon: 'picture_as_pdf',
   shortDescription: 'Mask sensitive content using a raster + OCR pipeline, all in-browser.',
+  maturity: 'beta',
   route: {
     name: 'pdf-redaction',
     path: 'tools/pdf-redaction',

@@ -31,4 +31,5 @@ export interface OcrPageResult {
 export interface PdfOcrResult {
   bytes: Uint8Array
   textPreview: string
+  warnings: string[]
 }

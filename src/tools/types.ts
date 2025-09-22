@@ -11,5 +11,6 @@ export interface ToolDefinition {
   label: string
   icon: string
   shortDescription?: string
+  maturity: 'stable' | 'beta' | 'experimental'
   route: ToolRouteConfig
 }

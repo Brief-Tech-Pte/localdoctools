@@ -96,6 +96,9 @@
                   <div class="text-caption text-grey-7">
                     {{ tool.shortDescription || 'Tool description coming soon.' }}
                   </div>
+                  <q-badge :color="maturityColor(tool.maturity)" class="q-mt-sm" align="top">
+                    {{ maturityLabel(tool.maturity) }}
+                  </q-badge>
                 </q-card-section>
                 <q-card-actions align="right">
                   <q-btn color="primary" flat label="Open" :to="{ name: tool.route.name }" />
@@ -126,7 +129,29 @@ import { computed } from 'vue'
 import { tools as toolsRegistry } from 'src/tools'
 
 const toolsList = toolsRegistry
-const primaryTool = computed(() => toolsList[0] ?? null)
+const primaryTool = computed(
+  () => toolsList.find((tool) => tool.maturity === 'stable') ?? toolsList[0] ?? null
+)
+
+const maturityLabelMap: Record<(typeof toolsList)[number]['maturity'], string> = {
+  stable: 'Stable',
+  beta: 'Beta',
+  experimental: 'Experimental',
+}
+
+const maturityColorMap: Record<(typeof toolsList)[number]['maturity'], string> = {
+  stable: 'positive',
+  beta: 'warning',
+  experimental: 'grey',
+}
+
+function maturityLabel(maturity: (typeof toolsList)[number]['maturity']) {
+  return maturityLabelMap[maturity]
+}
+
+function maturityColor(maturity: (typeof toolsList)[number]['maturity']) {
+  return maturityColorMap[maturity]
+}
 
 function scrollToFeatures() {
   const el = document.getElementById('features')

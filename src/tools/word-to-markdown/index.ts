@@ -5,6 +5,7 @@ export const wordToMarkdownTool: ToolDefinition = {
   label: 'Word → Markdown',
   icon: 'description',
   shortDescription: 'Convert DOCX documents to Markdown locally.',
+  maturity: 'stable',
   route: {
     name: 'word-to-markdown',
     path: 'tools/word-to-markdown',

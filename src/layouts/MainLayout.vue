@@ -8,16 +8,15 @@
 
         <q-space />
         <q-btn flat dense icon="home" label="Home" :to="{ path: '/' }" class="q-mr-sm" />
-        <q-btn
-          v-for="tool in toolsList"
-          :key="tool.id"
-          color="primary"
-          unelevated
-          class="q-ml-sm"
-          :icon="tool.icon"
-          :label="tool.label"
-          :to="{ name: tool.route.name }"
-        />
+        <div v-for="tool in toolsList" :key="tool.id" class="q-ml-sm">
+          <q-btn
+            color="primary"
+            unelevated
+            :icon="tool.icon"
+            :label="tool.label"
+            :to="{ name: tool.route.name }"
+          />
+        </div>
       </q-toolbar>
     </q-header>
 
@@ -49,6 +48,11 @@
             <q-item-label v-if="tool.shortDescription" caption>
               {{ tool.shortDescription }}
             </q-item-label>
+            <q-item-label caption>
+              <q-badge dense outline :color="maturityColor(tool.maturity)">
+                {{ maturityLabel(tool.maturity) }}
+              </q-badge>
+            </q-item-label>
           </q-item-section>
         </q-item>
       </q-list>
@@ -68,7 +72,33 @@ import { tools } from 'src/tools'
 const leftDrawerOpen = ref(false)
 const toolsList = tools
 
+const maturityLabelMap = {
+  stable: 'Stable',
+  beta: 'Beta',
+  experimental: 'Experimental',
+} as const
+
+const maturityColorMap = {
+  stable: 'positive',
+  beta: 'warning',
+  experimental: 'grey',
+} as const
+
+function maturityLabel(maturity: (typeof toolsList)[number]['maturity']) {
+  return maturityLabelMap[maturity]
+}
+
+function maturityColor(maturity: (typeof toolsList)[number]['maturity']) {
+  return maturityColorMap[maturity]
+}
+
 function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value
 }
 </script>
+
+<style scoped>
+.maturity-caption {
+  font-size: 0.65rem;
+}
+</style>

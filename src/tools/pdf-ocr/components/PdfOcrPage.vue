@@ -23,12 +23,7 @@
               @update:model-value="onFileChange"
             />
 
-            <q-select
-              v-model="dpi"
-              :options="dpiOptions"
-              filled
-              label="Rendering DPI"
-            />
+            <q-select v-model="dpi" :options="dpiOptions" filled label="Rendering DPI" />
 
             <q-select
               v-model="language"
@@ -56,9 +51,7 @@
           <q-card-section>
             <div class="text-subtitle1">Status</div>
             <div v-if="statusMessage" :class="statusClass">{{ statusMessage }}</div>
-            <div v-else class="text-grey-6">
-              Select a PDF and run OCR to see progress updates.
-            </div>
+            <div v-else class="text-grey-6">Select a PDF and run OCR to see progress updates.</div>
             <q-linear-progress
               v-if="processing"
               :value="progressValue"
@@ -105,6 +98,11 @@
               The first few hundred characters detected by Tesseract. Use this to verify that OCR is
               working as expected.
             </div>
+            <div v-if="ocrWarnings.length" class="ocr-warnings q-mb-sm">
+              <div v-for="warning in ocrWarnings" :key="warning" class="text-negative">
+                {{ warning }}
+              </div>
+            </div>
             <pre v-if="ocrPreview" class="ocr-preview">{{ ocrPreview }}</pre>
             <div v-else class="text-grey-6">Run OCR to see the extracted text.</div>
           </q-card-section>
@@ -136,6 +134,7 @@ const progressValue = ref(0)
 const previewUrl = ref('')
 const downloadUrl = ref('')
 const ocrPreview = ref('')
+const ocrWarnings = ref<string[]>([])
 
 const canProcess = computed(() => Boolean(file.value) && !processing.value)
 const statusClass = computed(() => {
@@ -155,6 +154,7 @@ function reset() {
   previewUrl.value = ''
   downloadUrl.value = ''
   ocrPreview.value = ''
+  ocrWarnings.value = []
 }
 
 onBeforeUnmount(() => {
@@ -180,6 +180,7 @@ function onFileChange(selected: File | null) {
   if (downloadUrl.value) URL.revokeObjectURL(downloadUrl.value)
   downloadUrl.value = ''
   ocrPreview.value = ''
+  ocrWarnings.value = []
   statusMessage.value = ''
   statusVariant.value = 'neutral'
   progressValue.value = 0
@@ -198,7 +199,7 @@ async function runOcr() {
   statusVariant.value = 'neutral'
   progressValue.value = 0
   try {
-    const { bytes, textPreview } = await createSearchablePdf(
+    const { bytes, textPreview, warnings } = await createSearchablePdf(
       {
         file: file.value,
         dpi: dpi.value,
@@ -209,6 +210,7 @@ async function runOcr() {
       }
     )
     ocrPreview.value = textPreview
+    ocrWarnings.value = warnings
     if (downloadUrl.value) URL.revokeObjectURL(downloadUrl.value)
     const buffer =
       bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
@@ -216,8 +218,14 @@ async function runOcr() {
         : bytes.slice().buffer
     const blob = new Blob([buffer], { type: 'application/pdf' })
     downloadUrl.value = URL.createObjectURL(blob)
-    statusMessage.value = 'OCR complete. Review and download the searchable PDF.'
-    statusVariant.value = 'success'
+    if (warnings.length) {
+      statusMessage.value =
+        'OCR completed with warnings. Review the notes below before downloading.'
+      statusVariant.value = 'neutral'
+    } else {
+      statusMessage.value = 'OCR complete. Review and download the searchable PDF.'
+      statusVariant.value = 'success'
+    }
   } catch (error) {
     console.error(error)
     statusMessage.value =
@@ -281,5 +289,10 @@ function downloadResult() {
   overflow: auto;
   font-size: 0.85rem;
   white-space: pre-wrap;
+}
+
+.ocr-warnings {
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 </style>

@@ -5,6 +5,7 @@ export const pdfOcrTool: ToolDefinition = {
   label: 'PDF OCR',
   icon: 'text_snippet',
   shortDescription: 'Make scanned PDFs searchable with in-browser OCR.',
+  maturity: 'experimental',
   route: {
     name: 'pdf-ocr',
     path: 'tools/pdf-ocr',

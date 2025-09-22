@@ -12,6 +12,7 @@ import type {
 
 const MIN_CONFIDENCE = 40
 const POINTS_PER_INCH = 72
+const MIN_OCR_DIMENSION = 16
 
 type PdfJsModule = typeof PdfJsTypes
 type PdfLibModule = typeof PdfLibTypes
@@ -41,6 +42,7 @@ export async function createSearchablePdf(
   const dpiScale = Math.max(request.dpi, POINTS_PER_INCH) / POINTS_PER_INCH
 
   const textSnippets: string[] = []
+  const warnings: string[] = []
 
   const pageCount = sourceDocument.numPages
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
@@ -61,9 +63,23 @@ export async function createSearchablePdf(
 
     reportProgress(options.onProgress, pageIndex, 'ocr', 0.3)
 
-    const { words, fullText } = await recognizeCanvas(worker, canvas)
-    if (fullText.trim()) {
-      textSnippets.push(fullText.trim())
+    let words: OcrWord[] = []
+    let fullText = ''
+    if (canvas.width < MIN_OCR_DIMENSION || canvas.height < MIN_OCR_DIMENSION) {
+      warnings.push(
+        `Skipped OCR on page ${pageIndex + 1}: rendered size ${canvas.width}x${canvas.height} too small.`
+      )
+    } else {
+      const recognition = await recognizeCanvas(worker, canvas)
+      if ('error' in recognition) {
+        warnings.push(`OCR warning on page ${pageIndex + 1}: ${recognition.error}`)
+      } else {
+        words = recognition.words
+        fullText = recognition.fullText
+        if (fullText.trim()) {
+          textSnippets.push(fullText.trim())
+        }
+      }
     }
 
     reportProgress(options.onProgress, pageIndex, 'compose', 0.6)
@@ -98,7 +114,7 @@ export async function createSearchablePdf(
   const bytes = await outputPdf.save({ useObjectStreams: false })
   const textPreview = textSnippets.join('\n\n').slice(0, 600)
 
-  return { bytes, textPreview }
+  return { bytes, textPreview, warnings }
 }
 
 async function ensurePdfJs(): Promise<PdfJsModule> {
@@ -141,19 +157,28 @@ async function ensureTesseractWorker(language: string): Promise<TesseractWorker>
   return worker
 }
 
-async function recognizeCanvas(worker: TesseractWorker, canvas: HTMLCanvasElement) {
-  const result = await worker.recognize(canvas)
-  const words: OcrWord[] = (result?.data?.words ?? [])
-    .filter((word) => word.text && word.text.trim().length > 0)
-    .filter((word) => word.confidence >= MIN_CONFIDENCE)
-    .map((word) => ({
-      text: word.text,
-      confidence: word.confidence,
-      bbox: word.bbox,
-    }))
+async function recognizeCanvas(
+  worker: TesseractWorker,
+  canvas: HTMLCanvasElement
+): Promise<{ words: OcrWord[]; fullText: string } | { error: string }> {
+  try {
+    const result = await worker.recognize(canvas)
+    const words: OcrWord[] = (result?.data?.words ?? [])
+      .filter((word) => word.text && word.text.trim().length > 0)
+      .filter((word) => word.confidence >= MIN_CONFIDENCE)
+      .map((word) => ({
+        text: word.text,
+        confidence: word.confidence,
+        bbox: word.bbox,
+      }))
 
-  const fullText = result?.data?.text ?? ''
-  return { words, fullText }
+    const fullText = result?.data?.text ?? ''
+    return { words, fullText }
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : String(error)
+    const message = raw.split('\n')[0]?.trim() || raw
+    return { error: message }
+  }
 }
 
 async function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
