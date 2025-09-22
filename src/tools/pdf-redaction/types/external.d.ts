@@ -53,6 +53,13 @@ declare module 'pdfjs-dist/build/pdf.worker?worker' {
   export default WorkerConstructor
 }
 
+declare module 'pdfjs-dist/build/pdf.worker.mjs?worker' {
+  const WorkerConstructor: {
+    new (): Worker
+  }
+  export default WorkerConstructor
+}
+
 // declare module 'tesseract.js' {
 //   export interface RecognizeResult {
 //     data: {

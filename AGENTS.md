@@ -24,6 +24,7 @@
 - ESLint flat config (`eslint.config.js`) combines Quasar + Vue + TypeScript presets. Expect type-aware linting and `@typescript-eslint/consistent-type-imports` enforcement.
 - Prefer Composition API with `<script setup>`; use `defineProps`, `defineEmits`, `withDefaults` rather than Options API patterns.
 - Keep imports type-safe; mark unused runtime dependencies as `type` imports when possible.
+- Import strategy: prefer static imports project-wide for predictability, type safety, and simpler build graphs. Use dynamic imports only for exceptionally heavy, browser-only bundles whose cost materially impacts initial load (case-by-case; justify in PR).
 - For new UI, favour Quasar components (`q-` prefixes) and responsive grid utilities over raw HTML.
 
 ## Project Structure
@@ -37,7 +38,7 @@
 
 ## Feature Conventions
 
-- Word -> Markdown (`src/tools/word-to-markdown/components/WordToMarkdownPage.vue`) is the current flagship tool. It dynamically imports browser builds of `mammoth` and `turndown`; follow this pattern for large, browser-only libraries to keep initial bundles lean and to preserve local-only processing.
+- Word -> Markdown (`src/tools/word-to-markdown/components/WordToMarkdownPage.vue`) is the current flagship tool
 - PDF Redaction (`src/tools/pdf-redaction`) now renders pages with pdf.js, supports drawing rectangles directly on the preview, and burns redactions into a rasterized PDF. OCR integration is still pending.
 - PDF OCR (`src/tools/pdf-ocr`) turns scanned PDFs into searchable ones using Tesseract.js. It rasterizes each page, runs OCR locally, and overlays an invisible text layer in the exported PDF.
 - Respect privacy/air-gapped design: never introduce backend services, telemetry, or third-party network calls. All document handling must stay in-browser.
