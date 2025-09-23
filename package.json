@@ -9,7 +9,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "lint": "eslint -c ./eslint.config.js \"./src*/**/*.{ts,js,cjs,mjs,vue}\"",
-    "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
+    "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore --ignore-path .prettierignore",
     "test": "vitest run",
     "dev": "quasar dev",
     "build": "quasar build",
