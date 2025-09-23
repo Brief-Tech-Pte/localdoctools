@@ -64,7 +64,9 @@
 
     <q-footer class="bg-grey-1 text-grey-7">
       <div class="q-pa-md row items-center justify-between footer-content">
-        <div class="text-caption">© {{ currentYear }} Local Doc Tools</div>
+        <div class="text-caption">
+          <template v-if="false">© {{ currentYear }} Local Doc Tools</template>
+        </div>
         <div class="row items-center q-gutter-md">
           <RouterLink class="footer-link" :to="{ name: 'terms-of-use' }">Terms of Use</RouterLink>
           <RouterLink class="footer-link" :to="{ name: 'privacy-notice' }"
