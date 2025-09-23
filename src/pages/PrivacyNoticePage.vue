@@ -8,10 +8,22 @@
 
           <div class="q-gutter-md">
             <section>
+              <h2 class="text-h6 text-weight-medium q-mb-sm">Definitions</h2>
+              <p>
+                "Local Doc Tools" (the "Service") refers to the website located at
+                <a href="https://localdoctools.com" target="_blank" rel="noopener"
+                  >https://localdoctools.com</a
+                >
+                and any document utilities made available through it by Brief Tech Pte Ltd.
+              </p>
+            </section>
+
+            <section>
               <h2 class="text-h6 text-weight-medium q-mb-sm">Overview</h2>
               <p>
-                Local Doc Tools operates entirely in your browser. We do not collect, transmit, or
-                store the contents of documents you process with the Service.
+                Local Doc Tools is operated by Brief Tech Pte Ltd ("Brief Tech"). It runs entirely
+                in your browser. We do not collect, transmit, or store the contents of documents you
+                process with the Service.
               </p>
             </section>
 
@@ -45,7 +57,7 @@
             <section>
               <h2 class="text-h6 text-weight-medium q-mb-sm">Contact</h2>
               <p>
-                For privacy questions or requests, email us at
+                For privacy questions or requests, email Brief Tech Pte Ltd at
                 <a href="mailto:privacy@localdoctools.example">privacy@localdoctools.example</a>.
               </p>
             </section>

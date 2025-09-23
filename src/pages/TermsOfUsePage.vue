@@ -8,12 +8,23 @@
 
           <div class="q-gutter-md">
             <section>
+              <h2 class="text-h6 text-weight-medium q-mb-sm">Definitions</h2>
+              <p>
+                "Local Doc Tools" or the "Service" refers to the website located at
+                <a href="https://localdoctools.com" target="_blank" rel="noopener"
+                  >https://localdoctools.com</a
+                >
+                and any document utilities made available through it by Brief Tech Pte Ltd.
+              </p>
+            </section>
+
+            <section>
               <h2 class="text-h6 text-weight-medium q-mb-sm">1. Acceptance</h2>
               <p>
                 By accessing or using Local Doc Tools (the "Service"), you agree to these Terms of
-                Use and any policies referenced within. The Service is intended for users aged 18 or
-                older, or for minors who have consent from a parent, guardian, or authorized
-                supervisor.
+                Use and any policies referenced within. The Service is provided by Brief Tech Pte
+                Ltd ("Brief Tech", "we", "our"). It is intended for users aged 18 or older, or for
+                minors who have consent from a parent, guardian, or authorized supervisor.
               </p>
             </section>
 
@@ -42,7 +53,7 @@
               <p>
                 You retain all rights to your documents and outputs. All intellectual property
                 associated with the Service, including the user interface, branding, and underlying
-                code, remains with the project maintainers and contributors, subject to open-source
+                code, remains with Brief Tech Pte Ltd and its contributors, subject to open-source
                 licenses noted in the project repository.
               </p>
             </section>
@@ -104,7 +115,7 @@
             <section>
               <h2 class="text-h6 text-weight-medium q-mb-sm">11. Contact</h2>
               <p>
-                For questions about these Terms of Use, contact us at
+                For questions about these Terms of Use, contact Brief Tech Pte Ltd at
                 <a href="mailto:hello@localdoctools.example">hello@localdoctools.example</a>.
               </p>
             </section>
