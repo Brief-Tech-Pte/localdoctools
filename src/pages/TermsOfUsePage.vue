@@ -116,7 +116,7 @@
               <h2 class="text-h6 text-weight-medium q-mb-sm">11. Contact</h2>
               <p>
                 For questions about these Terms of Use, contact Brief Tech Pte Ltd at
-                <a href="mailto:hello@localdoctools.example">hello@localdoctools.example</a>.
+                <a href="mailto:admin@localdoctools.com">admin@localdoctools.com</a>.
               </p>
             </section>
           </div>

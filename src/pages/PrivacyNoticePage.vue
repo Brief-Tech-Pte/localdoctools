@@ -58,7 +58,7 @@
               <h2 class="text-h6 text-weight-medium q-mb-sm">Contact</h2>
               <p>
                 For privacy questions or requests, email Brief Tech Pte Ltd at
-                <a href="mailto:privacy@localdoctools.example">privacy@localdoctools.example</a>.
+                <a href="mailto:admin@localdoctools.com">admin@localdoctools.com</a>.
               </p>
             </section>
 
