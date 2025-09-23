@@ -61,16 +61,29 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+
+    <q-footer class="bg-grey-1 text-grey-7">
+      <div class="q-pa-md row items-center justify-between footer-content">
+        <div class="text-caption">© {{ currentYear }} Local Doc Tools</div>
+        <div class="row items-center q-gutter-md">
+          <RouterLink class="footer-link" :to="{ name: 'terms-of-use' }">Terms of Use</RouterLink>
+          <RouterLink class="footer-link" :to="{ name: 'privacy-notice' }"
+            >Privacy Notice</RouterLink
+          >
+        </div>
+      </div>
+    </q-footer>
   </q-layout>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { tools } from 'src/tools'
 
 const leftDrawerOpen = ref(false)
 const toolsList = tools
+const currentYear = computed(() => new Date().getFullYear())
 
 const maturityLabelMap = {
   stable: 'Stable',
@@ -100,5 +113,21 @@ function toggleLeftDrawer() {
 <style scoped>
 .maturity-caption {
   font-size: 0.65rem;
+}
+
+.footer-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.footer-link:hover,
+.footer-link:focus {
+  text-decoration: underline;
+}
+
+.footer-content {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 </style>

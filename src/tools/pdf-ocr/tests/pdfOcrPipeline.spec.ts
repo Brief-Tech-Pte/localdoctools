@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { mapWordToPdf, MIN_OCR_DIMENSION, recognizeCanvas, shouldSkipOcr } from '../services/pdfOcrPipeline'
+import {
+  mapWordToPdf,
+  MIN_OCR_DIMENSION,
+  recognizeCanvas,
+  shouldSkipOcr,
+} from '../services/pdfOcrPipeline'
 import type { OcrWord } from '../types/ocr'
 
 const sampleWord: OcrWord = {
@@ -53,7 +58,10 @@ describe('recognizeCanvas', () => {
       }),
     }
     const canvas = document.createElement('canvas')
-    const result = await recognizeCanvas(worker as unknown as Parameters<typeof recognizeCanvas>[0], canvas)
+    const result = await recognizeCanvas(
+      worker as unknown as Parameters<typeof recognizeCanvas>[0],
+      canvas
+    )
     if ('error' in result) throw new Error('Expected success result')
     const { fullText, words } = result
     expect(fullText).toBe('Hello world')
@@ -63,10 +71,17 @@ describe('recognizeCanvas', () => {
 
   it('returns trimmed error message when OCR fails', async () => {
     const worker = {
-      recognize: vi.fn().mockRejectedValue(new Error('Image too small to scale!! (2x36 vs min width of 3)\nstack trace')),
+      recognize: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('Image too small to scale!! (2x36 vs min width of 3)\nstack trace')
+        ),
     }
     const canvas = document.createElement('canvas')
-    const result = await recognizeCanvas(worker as unknown as Parameters<typeof recognizeCanvas>[0], canvas)
+    const result = await recognizeCanvas(
+      worker as unknown as Parameters<typeof recognizeCanvas>[0],
+      canvas
+    )
     expect(result).toEqual({ error: 'Image too small to scale!! (2x36 vs min width of 3)' })
   })
 })
