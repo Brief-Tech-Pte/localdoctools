@@ -30,6 +30,7 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.0.0",
     "quasar": "^2.16.0",
+    "tesseract.js": "^5.1.0",
     "turndown": "^7.2.1",
     "vue": "3.5.20",
     "vue-router": "^4.0.12"
@@ -51,7 +52,6 @@
     "firebase-tools": "^14.17.0",
     "globals": "^16.4.0",
     "jsdom": "^24.1.0",
-    "pngjs": "^7.0.0",
     "prettier": "^3.3.3",
     "typescript": "^5.9.2",
     "vite-plugin-checker": "^0.10.3",
