@@ -76,7 +76,6 @@
           <q-card-section>
             <div v-if="viewerActive" class="viewer-wrapper">
               <PdfViewer
-                :file="file"
                 :src="viewerSrc"
                 :page-index="pageIndex"
                 :text-select-mode="textSelectMode"
@@ -128,8 +127,7 @@ interface OverlayRectEntry {
 const defaultPdfUrl = '/samples/demo.pdf'
 
 const urlInput = ref(defaultPdfUrl)
-const file = ref<File | null>(null)
-const viewerSrc = ref<string | null>(defaultPdfUrl)
+const viewerSrc = ref<string | Blob | null>(defaultPdfUrl)
 const loading = ref(false)
 const error = ref('')
 const statusMessage = ref('')
@@ -165,7 +163,7 @@ const currentViewportText = computed(() => {
 })
 
 const hasDocument = computed(() => pageCount.value > 0)
-const viewerActive = computed(() => Boolean(file.value) || Boolean(viewerSrc.value))
+const viewerActive = computed(() => Boolean(viewerSrc.value))
 
 const pageInput = computed({
   get: () => activePageDisplay.value || 1,
@@ -191,7 +189,6 @@ async function loadPdfFromUrl() {
   error.value = ''
   statusMessage.value = 'Loading PDF (linearized streams will use range requests when available)…'
   prepareForReload()
-  file.value = null
   if (viewerSrc.value === targetUrl) {
     viewerSrc.value = null
     await nextTick()

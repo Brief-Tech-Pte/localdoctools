@@ -54,8 +54,7 @@ interface OverlayRectStyle {
 }
 
 const props = defineProps<{
-  file: File | null
-  src?: string | null
+  src?: string | URL | Blob | null
   pageIndex: number
   textSelectMode: boolean
   overlayRects: OverlayRectStyle[]
@@ -107,14 +106,11 @@ const disableAutoFetch = computed(() => props.disableAutoFetch ?? false)
 const disableStream = computed(() => props.disableStream ?? false)
 
 watch(
-  [() => props.file, () => props.src],
-  async ([newFile, newSrc]) => {
+  () => props.src,
+  async (newSrc) => {
     const token = ++loadRequestId.value
-    await loadDocument(
-      newFile ?? null,
-      typeof newSrc === 'string' && newSrc.trim() ? newSrc : null,
-      token
-    )
+    const normalizedSrc = normalizeSrc(newSrc)
+    await loadDocument(normalizedSrc, token)
   },
   { immediate: true }
 )
@@ -122,13 +118,10 @@ watch(
 watch(
   () => [props.disableAutoFetch, props.disableStream, props.rangeChunkSize],
   async () => {
-    if (!props.file && !props.src) return
+    const normalizedSrc = normalizeSrc(props.src)
+    if (!normalizedSrc) return
     const token = ++loadRequestId.value
-    await loadDocument(
-      props.file ?? null,
-      typeof props.src === 'string' && props.src.trim() ? props.src : null,
-      token
-    )
+    await loadDocument(normalizedSrc, token)
   }
 )
 
@@ -155,18 +148,28 @@ onBeforeUnmount(() => {
   }
 })
 
-async function loadDocument(file: File | null, src: string | null, token: number) {
+function normalizeSrc(input: string | URL | Blob | null | undefined): string | Blob | null {
+  if (typeof input === 'string') {
+    const trimmed = input.trim()
+    return trimmed.length ? trimmed : null
+  }
+  if (typeof URL !== 'undefined' && input instanceof URL) {
+    const serialized = input.toString().trim()
+    return serialized.length ? serialized : null
+  }
+  if (input instanceof Blob) {
+    return input
+  }
+  return null
+}
+
+async function loadDocument(src: string | Blob | null, token: number) {
   cancelRenderTask()
   const hadDocument = await unloadDocument()
   await destroyLoadingTask()
 
-  const activeFile = file
-  let activeSrc: string | null = src
-  if (activeFile && activeSrc) {
-    console.warn('PdfViewer received both a File and a src URL; prioritising the File input.')
-    activeSrc = null
-  }
-  if (!activeFile && !activeSrc) {
+  const activeSrc: string | Blob | null = src
+  if (activeSrc === null) {
     if (!hadDocument) {
       emit('document-unloaded')
     }
@@ -178,20 +181,21 @@ async function loadDocument(file: File | null, src: string | null, token: number
   try {
     const pdfjs = await ensurePdfJs()
     if (token !== loadRequestId.value) return
-    if (activeFile) {
-      const arrayBuffer = await activeFile.arrayBuffer()
-      if (token !== loadRequestId.value) return
-      nextLoadingTask = pdfjs.getDocument({
-        data: arrayBuffer,
-        disableAutoFetch: disableAutoFetch.value,
-        disableStream: disableStream.value,
-        rangeChunkSize: rangeChunkSize.value,
-      })
-    } else if (activeSrc) {
+    if (typeof activeSrc === 'string') {
       const documentParams: Parameters<typeof pdfjs.getDocument>[0] = {
         url: activeSrc,
         disableStream: disableStream.value,
         disableAutoFetch: disableAutoFetch.value,
+        rangeChunkSize: rangeChunkSize.value,
+      }
+      nextLoadingTask = pdfjs.getDocument(documentParams)
+    } else if (activeSrc instanceof Blob) {
+      const arrayBuffer = await activeSrc.arrayBuffer()
+      if (token !== loadRequestId.value) return
+      const documentParams: Parameters<typeof pdfjs.getDocument>[0] = {
+        data: arrayBuffer,
+        disableAutoFetch: disableAutoFetch.value,
+        disableStream: disableStream.value,
         rangeChunkSize: rangeChunkSize.value,
       }
       nextLoadingTask = pdfjs.getDocument(documentParams)
