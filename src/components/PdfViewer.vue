@@ -20,13 +20,12 @@
       @pointercancel="handleOverlayPointerCancel"
     >
       <slot name="overlay">
+        <div v-for="rect in overlayRects" :key="rect.id" class="overlay-rect" :style="rect.style" />
         <div
-          v-for="rect in overlayRects"
-          :key="rect.id"
-          class="overlay-rect"
-          :style="rect.style"
+          v-if="showDrawingRect && drawingRectStyle"
+          class="overlay-rect drawing"
+          :style="drawingRectStyle"
         />
-        <div v-if="showDrawingRect && drawingRectStyle" class="overlay-rect drawing" :style="drawingRectStyle" />
       </slot>
     </div>
   </div>
@@ -56,6 +55,7 @@ interface OverlayRectStyle {
 
 const props = defineProps<{
   file: File | null
+  src?: string | null
   pageIndex: number
   textSelectMode: boolean
   overlayRects: OverlayRectStyle[]
@@ -63,6 +63,7 @@ const props = defineProps<{
   showDrawingRect?: boolean
   minScale?: number
   maxScale?: number
+  rangeChunkSize?: number
 }>()
 
 const emit = defineEmits<{
@@ -95,15 +96,21 @@ let pdfjsModule: PdfJsModule | null = null
 let pdfWorkerInstance: Worker | null = null
 let pdfDoc: PDFDocumentProxy | null = null
 let renderTask: ReturnType<PdfJsTypes.PDFPageProxy['render']> | null = null
+let loadingTask: PdfJsTypes.PDFDocumentLoadingTask | null = null
 
 const minScale = computed(() => props.minScale ?? 0.5)
 const maxScale = computed(() => props.maxScale ?? 2)
+const rangeChunkSize = computed(() => props.rangeChunkSize ?? 65536)
 
 watch(
-  () => props.file,
-  async (newFile) => {
+  [() => props.file, () => props.src],
+  async ([newFile, newSrc]) => {
     const token = ++loadRequestId.value
-    await loadDocument(newFile, token)
+    await loadDocument(
+      newFile ?? null,
+      typeof newSrc === 'string' && newSrc.trim() ? newSrc : null,
+      token
+    )
   },
   { immediate: true }
 )
@@ -123,38 +130,75 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   cancelRenderTask()
-  unloadDocument()
+  void unloadDocument()
+  void destroyLoadingTask()
   if (pdfWorkerInstance) {
     pdfWorkerInstance.terminate()
     pdfWorkerInstance = null
   }
 })
 
-async function loadDocument(file: File | null, token: number) {
+async function loadDocument(file: File | null, src: string | null, token: number) {
   cancelRenderTask()
-  const hadDocument = unloadDocument()
-  if (!file) {
+  const hadDocument = await unloadDocument()
+  await destroyLoadingTask()
+
+  const activeFile = file
+  let activeSrc: string | null = src
+  if (activeFile && activeSrc) {
+    console.warn('PdfViewer received both a File and a src URL; prioritising the File input.')
+    activeSrc = null
+  }
+  if (!activeFile && !activeSrc) {
     if (!hadDocument) {
       emit('document-unloaded')
     }
     return
   }
+
+  let nextLoadingTask: PdfJsTypes.PDFDocumentLoadingTask | null = null
+
   try {
     const pdfjs = await ensurePdfJs()
     if (token !== loadRequestId.value) return
-    const arrayBuffer = await file.arrayBuffer()
-    if (token !== loadRequestId.value) return
-    const loadingTask = pdfjs.getDocument({ data: arrayBuffer })
-    const doc = await loadingTask.promise
+    if (activeFile) {
+      const arrayBuffer = await activeFile.arrayBuffer()
+      if (token !== loadRequestId.value) return
+      nextLoadingTask = pdfjs.getDocument({ data: arrayBuffer })
+    } else if (activeSrc) {
+      const documentParams: Parameters<typeof pdfjs.getDocument>[0] = {
+        url: activeSrc,
+        disableStream: false,
+        disableAutoFetch: false,
+        rangeChunkSize: rangeChunkSize.value,
+      }
+      nextLoadingTask = pdfjs.getDocument(documentParams)
+    }
+    if (!nextLoadingTask) return
+
+    loadingTask = nextLoadingTask
+    const doc = await nextLoadingTask.promise
+    if (loadingTask === nextLoadingTask) {
+      loadingTask = null
+    }
+
     if (token !== loadRequestId.value) {
-      void doc.destroy()
+      await destroyLoadingTask(nextLoadingTask)
       return
     }
+
     pdfDoc = markRaw(doc)
     emit('document-loaded', { pageCount: doc.numPages })
     await nextTick()
     await renderCurrentPage()
   } catch (error) {
+    if (nextLoadingTask) {
+      // Ensure we only cancel the task associated with this invocation.
+      await destroyLoadingTask(nextLoadingTask)
+    }
+    if (token !== loadRequestId.value) {
+      return
+    }
     emit('load-error', { error })
   }
 }
@@ -223,11 +267,11 @@ function cancelRenderTask() {
   }
 }
 
-function unloadDocument() {
+async function unloadDocument() {
   const hadDocument = Boolean(pdfDoc)
   if (pdfDoc) {
     try {
-      void pdfDoc.destroy()
+      await pdfDoc.destroy()
     } catch (error) {
       console.warn('PDF document destroy failed', error)
     }
@@ -238,6 +282,20 @@ function unloadDocument() {
     emit('document-unloaded')
   }
   return hadDocument
+}
+
+async function destroyLoadingTask(task?: PdfJsTypes.PDFDocumentLoadingTask | null) {
+  const target = task ?? loadingTask
+  if (!target) return
+  try {
+    await target.destroy()
+  } catch (error) {
+    console.warn('Failed to destroy PDF loading task', error)
+  } finally {
+    if (!task || loadingTask === target) {
+      loadingTask = null
+    }
+  }
 }
 
 async function ensurePdfJs(): Promise<PdfJsModule> {

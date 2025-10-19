@@ -20,7 +20,7 @@
             />
             <q-btn :loading="loading" label="Load PDF" color="primary" @click="loadPdfFromUrl" />
             <q-btn flat label="Reset overlays" :disable="!overlayRectsInternal.length" @click="clearOverlays" />
-            <q-toggle v-model="textSelectMode" label="Text select mode" :disable="!file" color="primary" />
+            <q-toggle v-model="textSelectMode" label="Text select mode" :disable="!hasDocument" color="primary" />
             <div class="text-caption text-grey-6">
               Use the pointer to draw rectangles, or enable text selection to convert highlighted text into overlay marks.
             </div>
@@ -68,15 +68,16 @@
         <q-card bordered>
           <q-card-section class="row items-center justify-between">
             <div class="text-subtitle1">Viewer</div>
-            <div class="text-caption text-grey-7" v-if="file">
+            <div class="text-caption text-grey-7" v-if="hasDocument">
               {{ activePageDisplay }} / {{ totalPages }} · {{ currentViewportText }}
             </div>
           </q-card-section>
           <q-separator />
           <q-card-section>
-            <div v-if="file" class="viewer-wrapper">
+            <div v-if="viewerActive" class="viewer-wrapper">
               <PdfViewer
                 :file="file"
+                :src="viewerSrc"
                 :page-index="pageIndex"
                 :text-select-mode="textSelectMode"
                 :overlay-rects="overlayRects"
@@ -106,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 
 import PdfViewer from 'src/components/PdfViewer.vue'
 import type {
@@ -126,6 +127,7 @@ const defaultPdfUrl = '/samples/demo.pdf'
 
 const urlInput = ref(defaultPdfUrl)
 const file = ref<File | null>(null)
+const viewerSrc = ref<string | null>(defaultPdfUrl)
 const loading = ref(false)
 const error = ref('')
 const statusMessage = ref('')
@@ -160,6 +162,9 @@ const currentViewportText = computed(() => {
   return `${rounded(width)}×${rounded(height)} @ ${scale.toFixed(2)}×`
 })
 
+const hasDocument = computed(() => pageCount.value > 0)
+const viewerActive = computed(() => Boolean(file.value) || Boolean(viewerSrc.value))
+
 const pageInput = computed({
   get: () => activePageDisplay.value || 1,
   set: (value: number | string) => {
@@ -182,44 +187,17 @@ async function loadPdfFromUrl() {
   }
   loading.value = true
   error.value = ''
-  statusMessage.value = 'Fetching PDF…'
-  resetViewerState()
-  try {
-    const response = await fetch(targetUrl)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch PDF (status ${response.status})`)
-    }
-    const blob = await response.blob()
-    if (!blob.size) {
-      throw new Error('PDF response was empty.')
-    }
-    const name = deriveFileName(targetUrl)
-    file.value = new File([blob], name, { type: blob.type || 'application/pdf' })
-    statusMessage.value = 'PDF loaded. Navigate pages or draw overlays.'
-  } catch (err) {
-    console.error(err)
-    file.value = null
-    statusMessage.value = ''
-    error.value = err instanceof Error ? err.message : 'Unable to load PDF from the given URL.'
-  } finally {
-    loading.value = false
-  }
-}
-
-function deriveFileName(url: string) {
-  try {
-    const parsed = new URL(url, window.location.origin)
-    const parts = parsed.pathname.split('/').filter(Boolean)
-    const last = parts[parts.length - 1]
-    if (last) return last
-  } catch {
-    // Fallback to safe filename if URL parsing fails (e.g., data URLs).
-  }
-  return 'demo.pdf'
-}
-
-function resetViewerState() {
+  statusMessage.value = 'Loading PDF (linearized streams will use range requests when available)…'
+  prepareForReload()
   file.value = null
+  if (viewerSrc.value === targetUrl) {
+    viewerSrc.value = null
+    await nextTick()
+  }
+  viewerSrc.value = targetUrl
+}
+
+function prepareForReload() {
   overlayRectsInternal.value = []
   drawingRect.value = null
   drawingPointerId.value = null
@@ -250,6 +228,7 @@ function goNext() {
 function onDocumentLoaded(payload: { pageCount: number }) {
   pageCount.value = payload.pageCount
   pageIndex.value = 0
+  loading.value = false
   statusMessage.value = `Loaded document with ${payload.pageCount} page(s).`
 }
 
@@ -257,7 +236,9 @@ function onDocumentUnloaded() {
   pageCount.value = 0
   pageIndex.value = 0
   currentViewport.value = null
-  statusMessage.value = ''
+  if (!viewerActive.value) {
+    statusMessage.value = ''
+  }
 }
 
 function onRendered(payload: { viewport: PdfViewport }) {
@@ -266,6 +247,7 @@ function onRendered(payload: { viewport: PdfViewport }) {
 
 function onLoadError(payload: { error: unknown }) {
   console.error(payload.error)
+  loading.value = false
   error.value = 'Viewer failed to load the PDF.'
 }
 
