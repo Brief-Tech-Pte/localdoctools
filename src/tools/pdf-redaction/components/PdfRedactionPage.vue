@@ -62,7 +62,7 @@
               label="Apply redactions"
               @click="applyRedactions"
             />
-            <q-btn flat color="primary" label="Clear" @click="reset" />
+            <q-btn flat color="primary" label="Clear" @click="clearAll" />
           </q-card-section>
         </q-card>
 
@@ -127,36 +127,27 @@
           </q-card-section>
           <q-separator />
           <q-card-section>
-            <div v-if="hasDocument" class="preview-frame">
-              <div ref="viewerRef" class="page-viewer">
-                <canvas ref="pageCanvas" class="page-canvas" />
-                <div
-                  v-if="currentViewport"
-                  ref="textLayerRef"
-                  class="textLayer"
-                  :class="{ enabled: textSelectMode }"
-                  @mouseup="onTextSelectionEnd"
-                  @touchend="onTextSelectionEnd"
-                />
-                <div
-                  v-if="currentViewport"
-                  ref="overlayRef"
-                  class="page-overlay"
-                  :class="{ disabled: textSelectMode }"
-                  @pointerdown="onOverlayPointerDown"
-                  @pointermove="onOverlayPointerMove"
-                  @pointerup="onOverlayPointerUp"
-                  @pointercancel="onOverlayPointerCancel"
-                >
-                  <div
-                    v-for="rect in overlayRects"
-                    :key="rect.id"
-                    class="overlay-rect"
-                    :style="rect.style"
-                  />
-                  <div v-if="drawingState" class="overlay-rect drawing" :style="drawingRectStyle" />
-                </div>
-              </div>
+            <div v-if="viewerSrc" class="preview-frame">
+              <PdfViewer
+                :src="viewerSrc"
+                :page-index="activePageIndex"
+                :text-select-mode="textSelectMode"
+                :overlay-rects="overlayRects"
+                :drawing-rect-style="drawingRectStyle"
+                :show-drawing-rect="showDrawingRect"
+                :disable-auto-fetch="true"
+                :disable-stream="true"
+                @document-loaded="handleDocumentLoaded"
+                @document-unloaded="handleDocumentUnloaded"
+                @rendered="handleRendered"
+                @load-error="handleLoadError"
+                @render-error="handleRenderError"
+                @overlay-pointer-down="handleOverlayPointerDown"
+                @overlay-pointer-move="handleOverlayPointerMove"
+                @overlay-pointer-up="handleOverlayPointerUp"
+                @overlay-pointer-cancel="handleOverlayPointerCancel"
+                @text-selection="handleTextSelection"
+              />
             </div>
             <div v-else class="text-grey-6">
               Select a PDF to render the current page and start drawing redactions.
@@ -179,24 +170,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { exportFile } from 'quasar'
 
-import * as pdfjsLib from 'pdfjs-dist'
-import type * as PdfJsTypes from 'pdfjs-dist'
-import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer.mjs'
-// import 'pdfjs-dist/web/pdf_viewer.css'
+import PdfViewer from 'src/components/PdfViewer.vue'
+import type {
+  OverlayPointerPayload,
+  PdfViewport as ViewerViewport,
+  TextSelectionPayload,
+} from 'src/components/pdfViewerTypes'
 import type { PdfRedactionProgress, RedactionMark, RedactionRect } from '../types/redaction'
 import {
   buildRedactionSpec,
   computeFileHash,
   createRedactedPdf,
 } from '../services/pdfRedactionPipeline'
-// Using core helper renderTextLayer from pdf.js v5; no viewer types needed
-// import type { TextLayerBuilderRenderOptions } from 'pdfjs-dist/types/web/text_layer_builder'
-
-type PdfJsModule = typeof PdfJsTypes
-type PDFDocumentProxy = PdfJsTypes.PDFDocumentProxy
 
 const file = ref<File | null>(null)
 const dpi = ref(300)
@@ -209,45 +197,35 @@ const downloadUrl = ref('')
 const pdfHash = ref('')
 const lastResultBytes = ref<ArrayBuffer | null>(null)
 
-const pdfDoc = ref<PDFDocumentProxy | null>(null)
+const pageCount = ref(0)
 const activePageIndex = ref(0)
-const maxPageIndex = ref(0)
-
-const pageCanvas = ref<HTMLCanvasElement | null>(null)
-const overlayRef = ref<HTMLDivElement | null>(null)
-const viewerRef = ref<HTMLDivElement | null>(null)
-const textLayerRef = ref<HTMLDivElement | null>(null)
-const currentViewport = ref<{ width: number; height: number; scale: number } | null>(null)
+const viewerSrc = ref<Blob | null>(null)
+const currentViewport = ref<ViewerViewport | null>(null)
 
 const drawingState = ref<{ x: number; y: number; width: number; height: number } | null>(null)
 const drawingPointerId = ref<number | null>(null)
 const pointerOrigin = ref<{ x: number; y: number } | null>(null)
 
 const textSelectMode = ref(false)
-
-const resizeTimeout = ref<number | undefined>()
-// Guards async file loading/hash/renders from racing. Increment for each new selection.
 const loadRequestId = ref(0)
 
-let pdfjsModule: PdfJsModule | null = null
-let pdfWorkerInstance: Worker | null = null
-let renderTask: ReturnType<PdfJsTypes.PDFPageProxy['render']> | null = null
+const showDrawingRect = computed(() => Boolean(drawingState.value))
 
-const hasDocument = computed(() => pdfDoc.value !== null)
+const hasDocument = computed(() => pageCount.value > 0)
 const marksForActivePage = computed(() =>
   redactionMarks.value.filter((mark) => mark.pageIndex === activePageIndex.value)
 )
+const maxPageIndex = computed(() => (pageCount.value > 0 ? pageCount.value - 1 : 0))
 
 const overlayRects = computed(() => {
-  if (!currentViewport.value) return [] as Array<{ id: string; style: Record<string, string> }>
+  if (!currentViewport.value) {
+    return [] as Array<{ id: string; style: Record<string, string> }>
+  }
   return marksForActivePage.value.flatMap((mark) =>
-    mark.rects.map((rect, index) => {
-      const style = mapPdfRectToOverlay(rect)
-      return {
-        id: `${mark.id}-${index}`,
-        style,
-      }
-    })
+    mark.rects.map((rect, index) => ({
+      id: `${mark.id}-${index}`,
+      style: mapPdfRectToOverlay(rect),
+    }))
   )
 })
 
@@ -271,7 +249,6 @@ const statusClass = computed(() => {
 
 const activePageDisplay = computed(() => (hasDocument.value ? activePageIndex.value + 1 : 0))
 const totalPagesDisplay = computed(() => (hasDocument.value ? maxPageIndex.value + 1 : 0))
-
 const canGoPrevious = computed(() => hasDocument.value && activePageIndex.value > 0)
 const canGoNext = computed(() => hasDocument.value && activePageIndex.value < maxPageIndex.value)
 
@@ -293,23 +270,8 @@ const formattedSpec = computed(() => {
   return JSON.stringify(spec, null, 2)
 })
 
-watch(activePageIndex, async () => {
-  if (!pdfDoc.value) return
-  await renderCurrentPage()
-})
-
-onMounted(() => {
-  window.addEventListener('resize', handleResize)
-})
-
 onBeforeUnmount(() => {
   clearDownloadUrl()
-  cancelRenderTask()
-  window.removeEventListener('resize', handleResize)
-  if (pdfWorkerInstance) {
-    pdfWorkerInstance.terminate()
-    pdfWorkerInstance = null
-  }
 })
 
 function clearDownloadUrl() {
@@ -319,38 +281,56 @@ function clearDownloadUrl() {
   }
 }
 
+interface ResetViewerOptions {
+  keepSrc?: boolean
+}
+
+function resetViewerState(options: ResetViewerOptions = {}) {
+  const { keepSrc = false } = options
+  if (!keepSrc) {
+    viewerSrc.value = null
+  }
+  pageCount.value = 0
+  activePageIndex.value = 0
+  currentViewport.value = null
+  drawingPointerId.value = null
+  pointerOrigin.value = null
+  drawingState.value = null
+}
+
 function reset() {
   clearDownloadUrl()
-  cancelRenderTask()
+  resetViewerState()
   file.value = null
   pdfHash.value = ''
   redactionMarks.value = []
   processing.value = false
   statusMessage.value = ''
   statusVariant.value = 'neutral'
-  activePageIndex.value = 0
-  maxPageIndex.value = 0
-  currentViewport.value = null
-  pointerOrigin.value = null
-  drawingState.value = null
-  pdfDoc.value = null
+  lastResultBytes.value = null
+  textSelectMode.value = false
+}
+
+function clearAll() {
+  loadRequestId.value += 1
+  reset()
 }
 
 async function onFileChange(newFile: File | null) {
-  // Tokenize this request to prevent prior async continuations from mutating state
   const token = ++loadRequestId.value
+  reset()
+  if (!newFile) return
+  file.value = newFile
+  statusMessage.value = 'Loading PDF…'
+  statusVariant.value = 'neutral'
+
   try {
-    reset()
-    file.value = newFile
-    if (!newFile) return
     const hash = await computeFileHash(newFile)
-    // Bail if a newer selection happened while hashing
     if (token !== loadRequestId.value || file.value !== newFile) return
     pdfHash.value = hash
-    await loadPdfDocument(newFile, token)
-  } catch (e) {
-    console.error(e)
-    // Only surface error if this request is still current
+    viewerSrc.value = newFile
+  } catch (error) {
+    console.error(error)
     if (token === loadRequestId.value) {
       statusMessage.value = 'Failed to load PDF. Please try again.'
       statusVariant.value = 'error'
@@ -358,173 +338,85 @@ async function onFileChange(newFile: File | null) {
   }
 }
 
-async function loadPdfDocument(selectedFile: File, token?: number) {
-  cancelRenderTask()
-  const pdfjs = await ensurePdfJs()
-  // If another selection happened while ensuring pdfjs, abort
-  if (token !== undefined && token !== loadRequestId.value) return
-  const arrayBuffer = await selectedFile.arrayBuffer()
-  // Abort if file changed while reading
-  if (token !== undefined && (token !== loadRequestId.value || file.value !== selectedFile)) return
-  const loadingTask = pdfjs.getDocument({ data: arrayBuffer })
-  const doc = await loadingTask.promise
-  // Final guard before mutating component state
-  if (token !== undefined && (token !== loadRequestId.value || file.value !== selectedFile)) return
-  pdfDoc.value = markRaw(doc)
-  maxPageIndex.value = Math.max(0, doc.numPages - 1)
-  activePageIndex.value = 0
-  statusMessage.value = 'PDF loaded. Draw rectangles on the preview to mark redactions.'
-  statusVariant.value = 'neutral'
-  await nextTick()
-  await renderCurrentPage()
-}
-
-async function renderCurrentPage() {
-  if (!pdfDoc.value || !pageCanvas.value) return
-  const pageNumber = Math.min(activePageIndex.value, pdfDoc.value.numPages - 1) + 1
-  const page = await pdfDoc.value.getPage(pageNumber)
-  const baseViewport = page.getViewport({ scale: 1 })
-
-  await nextTick()
-
-  const containerWidth = viewerRef.value?.clientWidth ?? baseViewport.width
-  const rawScale = containerWidth ? containerWidth / baseViewport.width : 1
-  const scale = Math.min(Math.max(rawScale, 0.5), 2)
-  const viewport = page.getViewport({ scale })
-  const canvas = pageCanvas.value
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  cancelRenderTask()
-
-  canvas.width = Math.floor(viewport.width)
-  canvas.height = Math.floor(viewport.height)
-  canvas.style.width = `${viewport.width}px`
-  canvas.style.height = `${viewport.height}px`
-
-  const task = page.render({
-    canvasContext: context,
-    viewport,
-    canvas,
-  })
-  renderTask = task
-
-  try {
-    await task.promise
-  } catch (error) {
-    if ((error as { name?: string }).name !== 'RenderingCancelledException') {
-      console.error(error)
-    }
-    return
-  } finally {
-    renderTask = null
-  }
-
-  currentViewport.value = {
-    width: viewport.width,
-    height: viewport.height,
-    scale,
-  }
-
-  // Render or refresh text layer
-  // Wait a tick so the v-if="currentViewport" text layer mount reflects in the DOM
-  await nextTick()
-  await doRenderTextLayer(page, viewport)
-}
-
-function cancelRenderTask() {
-  if (renderTask) {
-    try {
-      renderTask.cancel()
-    } catch (error) {
-      console.warn('Render task cancel failed', error)
-    }
-    renderTask = null
-  }
-}
-
-async function ensurePdfJs(): Promise<PdfJsModule> {
-  if (pdfjsModule && pdfWorkerInstance) {
-    return pdfjsModule
-  }
-  const workerModule = await import('pdfjs-dist/build/pdf.worker.mjs?worker')
-  if (!pdfWorkerInstance) {
-    pdfWorkerInstance = new workerModule.default()
-  }
-  pdfjsLib.GlobalWorkerOptions.workerPort = pdfWorkerInstance
-  pdfjsModule = pdfjsLib
-  return pdfjsModule
-}
-
 function goToPreviousPage() {
-  if (canGoPrevious.value) {
+  if (activePageIndex.value > 0) {
     activePageIndex.value -= 1
   }
 }
 
 function goToNextPage() {
-  if (canGoNext.value) {
+  if (pageCount.value && activePageIndex.value < pageCount.value - 1) {
     activePageIndex.value += 1
   }
 }
 
-// Ensure the viewer module can access the core namespace
-;(globalThis as unknown as { pdfjsLib?: typeof pdfjsLib }).pdfjsLib = pdfjsLib
-
-function clampPageNumber(value: number) {
-  const pageCount = maxPageIndex.value + 1
-  if (!Number.isFinite(value)) return 1
-  return Math.min(Math.max(Math.round(value), 1), pageCount)
+function handleDocumentLoaded(payload: { pageCount: number }) {
+  pageCount.value = payload.pageCount
+  activePageIndex.value = 0
+  statusMessage.value = 'PDF loaded. Draw rectangles on the preview to mark redactions.'
+  statusVariant.value = 'neutral'
 }
 
-function handleResize() {
-  if (!hasDocument.value) return
-  if (resizeTimeout.value) window.clearTimeout(resizeTimeout.value)
-  resizeTimeout.value = window.setTimeout(() => {
-    void renderCurrentPage()
-  }, 150)
+function handleDocumentUnloaded() {
+  resetViewerState({ keepSrc: true })
 }
 
-function onOverlayPointerDown(event: PointerEvent) {
-  if (!currentViewport.value || !overlayRef.value) return
-  if (textSelectMode.value) return // disable rectangle drawing while in text select mode
+function handleRendered(payload: { viewport: ViewerViewport }) {
+  currentViewport.value = payload.viewport
+}
+
+function handleLoadError({ error }: { error: unknown }) {
+  console.error(error)
+  statusMessage.value = 'Failed to load PDF. Please try again.'
+  statusVariant.value = 'error'
+  resetViewerState()
+}
+
+function handleRenderError({ error }: { error: unknown }) {
+  console.error(error)
+  statusMessage.value = 'Unable to render the current page.'
+  statusVariant.value = 'error'
+}
+
+function handleOverlayPointerDown(payload: OverlayPointerPayload) {
+  if (!currentViewport.value || textSelectMode.value) return
   if (drawingPointerId.value !== null) return
-  overlayRef.value.setPointerCapture(event.pointerId)
-  drawingPointerId.value = event.pointerId
-  const point = getRelativePoint(event)
-  pointerOrigin.value = point
-  drawingState.value = { x: point.x, y: point.y, width: 0, height: 0 }
-  event.preventDefault()
+  drawingPointerId.value = payload.pointerId
+  pointerOrigin.value = { ...payload.point }
+  drawingState.value = {
+    x: payload.point.x,
+    y: payload.point.y,
+    width: 0,
+    height: 0,
+  }
+  payload.originalEvent?.preventDefault()
 }
 
-function onOverlayPointerMove(event: PointerEvent) {
-  if (drawingPointerId.value !== event.pointerId || !pointerOrigin.value) return
-  const point = getRelativePoint(event)
+function handleOverlayPointerMove(payload: OverlayPointerPayload) {
+  if (drawingPointerId.value !== payload.pointerId || !pointerOrigin.value) return
   const origin = pointerOrigin.value
+  const point = payload.point
   drawingState.value = {
     x: Math.min(origin.x, point.x),
     y: Math.min(origin.y, point.y),
     width: Math.abs(point.x - origin.x),
     height: Math.abs(point.y - origin.y),
   }
-  event.preventDefault()
+  payload.originalEvent?.preventDefault()
 }
 
-function onOverlayPointerUp(event: PointerEvent) {
-  if (drawingPointerId.value !== event.pointerId) return
+function handleOverlayPointerUp(payload: OverlayPointerPayload) {
+  if (drawingPointerId.value !== payload.pointerId) return
   finalizeDrawing(true)
-  event.preventDefault()
+  payload.originalEvent?.preventDefault()
 }
 
-function onOverlayPointerCancel(event: PointerEvent) {
-  if (drawingPointerId.value !== event.pointerId) return
+function handleOverlayPointerCancel(payload: { pointerId: number }) {
+  if (drawingPointerId.value !== payload.pointerId) return
   finalizeDrawing(false)
 }
 
 function finalizeDrawing(shouldPersist: boolean) {
-  if (drawingPointerId.value !== null && overlayRef.value) {
-    overlayRef.value.releasePointerCapture(drawingPointerId.value)
-  }
   const rect = drawingState.value
   drawingPointerId.value = null
   pointerOrigin.value = null
@@ -546,141 +438,28 @@ function finalizeDrawing(shouldPersist: boolean) {
   statusVariant.value = 'success'
 }
 
-async function doRenderTextLayer(page: PdfJsTypes.PDFPageProxy, viewport: PdfJsTypes.PageViewport) {
-  // Always keep a text layer DOM in sync so selection rectangles align with the overlay
-  let node = textLayerRef.value
-  if (!node) {
-    // The element is conditionally rendered by currentViewport; wait a tick and retry
-    await nextTick()
-    node = textLayerRef.value
-  }
-  if (!node) return
-  // Clear previous content and builder
-  node.innerHTML = ''
-
-  try {
-    // v5 recommended: use TextLayerBuilder (from viewer package)
-    // Ensure container matches viewport dimensions for correct positioning
-    node.style.width = `${viewport.width}px`
-    node.style.height = `${viewport.height}px`
-    const textLayer = new pdfjsViewer.TextLayerBuilder({ pdfPage: page })
-    textLayer.div = node
-    await textLayer.render({ viewport })
-  } catch (e) {
-    console.warn('Failed to render text layer; text selection redaction disabled for this page.', e)
-  }
-}
-
-function onTextSelectionEnd() {
-  if (!textSelectMode.value || !textLayerRef.value || !currentViewport.value) return
-  const selection = window.getSelection()
-  if (!selection || selection.isCollapsed) return
-
-  // Ensure the selection is within our text layer
-  const anchorNode = selection.anchorNode
-  const focusNode = selection.focusNode
-  const layer = textLayerRef.value
-  if (!anchorNode || !focusNode) return
-  if (!layer.contains(anchorNode) || !layer.contains(focusNode)) return
-
-  const range = selection.rangeCount ? selection.getRangeAt(0) : null
-  if (!range) return
-
-  const rectList = range.getClientRects()
-  if (!rectList.length) return
-
-  const overlay = overlayRef.value
-  if (!overlay) return
-  const bounds = overlay.getBoundingClientRect()
-
-  // Build overlay-space rectangles from selection boxes
-  const overlayRectsLocal: Array<{ x: number; y: number; width: number; height: number }> = []
-  for (const r of Array.from(rectList)) {
-    const x = clamp(r.left - bounds.left, 0, currentViewport.value.width)
-    const y = clamp(r.top - bounds.top, 0, currentViewport.value.height)
-    const w = clamp(r.width, 0, currentViewport.value.width - x)
-    const h = clamp(r.height, 0, currentViewport.value.height - y)
-    if (w > 1 && h > 1) overlayRectsLocal.push({ x, y, width: w, height: h })
-  }
-
-  if (!overlayRectsLocal.length) return
-
-  // Merge near-collinear boxes on the same line to reduce fragmentation
-  const merged = mergeLineBoxes(overlayRectsLocal)
-  const pdfRects: RedactionRect[] = []
-  for (const or of merged) {
-    const pdfRect = convertOverlayRectToPdf(or)
-    if (pdfRect) pdfRects.push(pdfRect)
-  }
-  if (!pdfRects.length) return
-
+function handleTextSelection(payload: TextSelectionPayload) {
+  if (!textSelectMode.value || !payload.pdfRects.length) return
+  const rects: RedactionRect[] = payload.pdfRects.map(({ x, y, width, height }) => ({
+    x,
+    y,
+    width,
+    height,
+  }))
   redactionMarks.value.push({
     id: crypto.randomUUID(),
     pageIndex: activePageIndex.value,
-    rects: pdfRects,
+    rects,
   })
   statusMessage.value = 'Added redaction from selected text.'
   statusVariant.value = 'success'
-
-  // Clear selection for better UX
-  selection.removeAllRanges()
+  window.getSelection()?.removeAllRanges()
 }
 
-type Box = { x: number; y: number; width: number; height: number }
-function mergeLineBoxes(boxes: Box[]): Box[] {
-  // Group by approximate y (line). Tolerance in pixels.
-  const tol = 3
-  const groups: Box[][] = []
-  const sorted = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)
-  for (const b of sorted) {
-    const g = groups.find((g) => {
-      if (!g.length) return false
-      const first = g[0]!
-      return Math.abs(first.y - b.y) <= tol
-    })
-    if (g) {
-      g.push(b)
-    } else {
-      groups.push([b])
-    }
-  }
-  const merged: Box[] = []
-  for (const g of groups) {
-    if (!g.length) continue
-    const first: Box = g[0] as Box
-    // Merge overlapping/adjacent horizontally
-    let current: Box = { x: first.x, y: first.y, width: first.width, height: first.height }
-    for (let i = 1; i < g.length; i++) {
-      const b = g[i] as Box
-      if (b.x <= current.x + current.width + 4) {
-        const right = Math.max(current.x + current.width, b.x + b.width)
-        current.width = right - current.x
-        current.y = Math.min(current.y, b.y)
-        current.height = Math.max(current.height, b.height)
-      } else {
-        merged.push(current)
-        current = { x: b.x, y: b.y, width: b.width, height: b.height }
-      }
-    }
-    merged.push(current)
-  }
-  return merged
-}
-
-function getRelativePoint(event: PointerEvent) {
-  const overlay = overlayRef.value
-  const viewport = currentViewport.value
-  if (!overlay || !viewport) {
-    return { x: 0, y: 0 }
-  }
-  const bounds = overlay.getBoundingClientRect()
-  const x = clamp(event.clientX - bounds.left, 0, viewport.width)
-  const y = clamp(event.clientY - bounds.top, 0, viewport.height)
-  return { x, y }
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
+function clampPageNumber(value: number) {
+  if (!pageCount.value) return 1
+  if (!Number.isFinite(value)) return 1
+  return Math.min(Math.max(Math.round(value), 1), pageCount.value)
 }
 
 function mapPdfRectToOverlay(rect: RedactionRect): Record<string, string> {
@@ -744,18 +523,16 @@ async function applyRedactions() {
     statusMessage.value = 'Redaction pipeline completed. Review and download the output PDF.'
     statusVariant.value = 'success'
 
-    // Reload the redacted PDF into the viewer so users can continue redacting.
-    // Use the same race-guarding token approach as file selection.
     const redactedBlob = new Blob([arrayBuffer], { type: 'application/pdf' })
     const redactedFile = new File([redactedBlob], 'redacted.pdf', { type: 'application/pdf' })
     const token = ++loadRequestId.value
-    // Start fresh marks for the new document; keep the download URL intact.
     redactionMarks.value = []
     file.value = redactedFile
+    resetViewerState()
     const newHash = await computeFileHash(redactedFile)
     if (token !== loadRequestId.value || file.value !== redactedFile) return
     pdfHash.value = newHash
-    await loadPdfDocument(redactedFile, token)
+    viewerSrc.value = redactedFile
   } catch (error) {
     console.error(error)
     statusMessage.value =
@@ -794,42 +571,8 @@ function serializeMarks(marks: Array<RedactionMark & { id: string }>): Redaction
   padding: 16px;
   display: flex;
   justify-content: center;
-  overflow: auto;
+  overflow: hidden;
   max-height: 720px;
-}
-
-.page-viewer {
-  position: relative;
-  display: inline-block;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  background: #fff;
-}
-
-.page-canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  position: relative;
-  z-index: 0;
-}
-
-.page-overlay {
-  position: absolute;
-  inset: 0;
-  cursor: crosshair;
-  touch-action: none;
-}
-
-.overlay-rect {
-  position: absolute;
-  border: 2px solid rgba(244, 67, 54, 0.9);
-  background-color: rgba(244, 67, 54, 0.35);
-  border-radius: 2px;
-}
-
-.overlay-rect.drawing {
-  border-style: dashed;
-  background-color: rgba(244, 67, 54, 0.2);
 }
 
 .page-input {
@@ -844,45 +587,5 @@ function serializeMarks(marks: Array<RedactionMark & { id: string }>): Redaction
   max-height: 320px;
   overflow: auto;
   font-size: 0.75rem;
-}
-
-/* Text layer for selection */
-.textLayer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  user-select: none;
-  z-index: 1;
-  /* Hide text glyphs but allow selection highlight */
-  color: transparent;
-}
-.textLayer.enabled {
-  pointer-events: auto;
-  user-select: text;
-}
-
-/* Position text spans generated by TextLayerBuilder */
-.textLayer > span {
-  position: absolute;
-  transform-origin: 0% 0%;
-  white-space: pre;
-}
-.textLayer .endOfContent {
-  display: block;
-  position: absolute;
-  left: 0;
-  top: 0;
-}
-
-/* Optional: visible selection highlight */
-.textLayer ::selection {
-  background: rgba(33, 150, 243, 0.25);
-}
-
-/* Disable drawing overlay when in text select mode */
-.page-overlay.disabled {
-  pointer-events: none;
-  cursor: text;
-  z-index: 2;
 }
 </style>

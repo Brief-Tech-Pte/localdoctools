@@ -135,12 +135,6 @@ watch(
   }
 )
 
-watch(showRawTextLayer, () => {
-  const node = textLayerRef.value
-  if (node) {
-    applyTextLayerDebugStyles(node)
-  }
-})
 onMounted(() => {
   window.addEventListener('resize', handleResize)
 })
@@ -364,6 +358,7 @@ async function renderTextLayer(page: PdfJsTypes.PDFPageProxy, viewport: PdfJsTyp
     textLayer.div = node
     const textViewport = viewport.clone({ dontFlip: true })
     await textLayer.render({ viewport: textViewport })
+    // Reapply sizing – render resets inline styles in some builds
     node.style.width = `${viewport.width}px`
     node.style.height = `${viewport.height}px`
   } catch (error) {
@@ -534,12 +529,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function applyTextLayerDebugStyles(node: HTMLDivElement) {
-  const color = showRawTextLayer.value ? 'rgba(0, 0, 0, 0.85)' : 'transparent'
-  node.style.setProperty('--pdf-text-layer-color', color)
-  node.style.mixBlendMode = showRawTextLayer.value ? 'multiply' : ''
-}
-
 function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes.PageViewport) {
   const scale = viewport.scale
   node.style.setProperty('--scale-factor', `${scale}`)
@@ -553,6 +542,12 @@ function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes
     node.style.removeProperty('--scale-round-y')
   }
   node.setAttribute('data-main-rotation', `${viewport.rotation}`)
+}
+
+function applyTextLayerDebugStyles(node: HTMLDivElement) {
+  const color = showRawTextLayer.value ? 'rgba(0, 0, 0, 0.85)' : 'transparent'
+  node.style.setProperty('--pdf-text-layer-color', color)
+  node.style.mixBlendMode = showRawTextLayer.value ? 'multiply' : ''
 }
 </script>
 
@@ -614,8 +609,12 @@ function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes
   user-select: text;
 }
 
+.textLayer :is(br) {
+  -webkit-user-select: none;
+}
+
 .textLayer :is(span, br) {
-  color: var(--pdf-text-layer-color, transparent);
+  color: transparent;
   position: absolute;
   white-space: pre;
   cursor: text;

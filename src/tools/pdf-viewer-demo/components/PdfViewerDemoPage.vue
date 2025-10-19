@@ -10,26 +10,62 @@
             </div>
           </q-card-section>
           <q-separator />
-          <q-card-section class="column q-gutter-sm">
-            <q-input
-              v-model="urlInput"
-              label="PDF URL"
-              autogrow
-              type="textarea"
-              aria-label="PDF URL"
-            />
-            <q-btn :loading="loading" label="Load PDF" color="primary" @click="loadPdfFromUrl" />
-            <q-btn flat label="Reset overlays" :disable="!overlayRectsInternal.length" @click="clearOverlays" />
-            <q-toggle v-model="textSelectMode" label="Text select mode" :disable="!hasDocument" color="primary" />
-            <q-toggle
-              v-model="showRawTextLayer"
-              label="Show text layer overlay"
-              :disable="!hasDocument"
-            />
+          <q-card-section class="column q-gutter-md">
+            <div class="row items-end q-col-gutter-sm">
+              <div class="col">
+                <q-input
+                  v-model="urlInput"
+                  label="PDF URL"
+                  type="text"
+                  dense
+                  outlined
+                  autocomplete="off"
+                  aria-label="PDF URL"
+                />
+              </div>
+              <div class="col-auto">
+                <q-btn
+                  :loading="loading"
+                  color="primary"
+                  label="Load URL"
+                  unelevated
+                  @click="loadPdfFromUrl"
+                />
+              </div>
+            </div>
+            <div class="row q-col-gutter-sm">
+              <div class="col-auto">
+                <q-btn outline icon="upload_file" label="Load Local PDF" @click="triggerFileDialog" />
+              </div>
+              <div class="col-auto">
+                <q-btn
+                  flat
+                  label="Reset overlays"
+                  :disable="!overlayRectsInternal.length"
+                  @click="clearOverlays"
+                />
+              </div>
+              <div class="col-auto">
+                <q-btn
+                  flat
+                  label="Toggle text layer overlay"
+                  :disable="!hasDocument"
+                  :class="{ 'text-primary': showRawTextLayer }"
+                  @click="toggleTextLayerDebug"
+                />
+              </div>
+            </div>
             <div class="text-caption text-grey-6">
-              Use the pointer to draw rectangles, or enable text selection to convert highlighted text into overlay marks.
+              Text selection is always enabled; highlight copyable text to capture overlay rectangles.
             </div>
             <div v-if="statusMessage" class="text-body2">{{ statusMessage }}</div>
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="application/pdf"
+              class="hidden-input"
+              @change="handleFileChange"
+            />
             <div v-if="error" class="text-negative">{{ error }}</div>
           </q-card-section>
           <q-separator />
@@ -99,7 +135,6 @@
                 @overlay-pointer-move="onOverlayPointerMove"
                 @overlay-pointer-up="onOverlayPointerUp"
                 @overlay-pointer-cancel="onOverlayPointerCancel"
-                @text-selection="onTextSelection"
               />
             </div>
             <div v-else class="text-grey-6">
@@ -120,7 +155,6 @@ import PdfViewer from 'src/components/PdfViewer.vue'
 import type {
   OverlayPointerPayload,
   PdfViewport,
-  TextSelectionPayload,
   ViewerPoint,
   ViewerRect,
 } from 'src/components/pdfViewerTypes'
@@ -140,8 +174,9 @@ const statusMessage = ref('')
 const pageIndex = ref(0)
 const pageCount = ref(0)
 const currentViewport = ref<PdfViewport | null>(null)
-const textSelectMode = ref(false)
+const textSelectMode = ref(true)
 const showRawTextLayer = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const overlayRectsInternal = ref<OverlayRectEntry[]>([])
 const drawingPointerId = ref<number | null>(null)
@@ -211,12 +246,46 @@ function prepareForReload() {
   pageIndex.value = 0
   pageCount.value = 0
   currentViewport.value = null
-  textSelectMode.value = false
 }
 
 function clearOverlays() {
   overlayRectsInternal.value = []
   statusMessage.value = 'Cleared overlay rectangles.'
+}
+
+function triggerFileDialog() {
+  fileInputRef.value?.click()
+}
+
+function toggleTextLayerDebug() {
+  showRawTextLayer.value = !showRawTextLayer.value
+}
+
+async function handleFileChange(event: Event) {
+  const target = event.target as HTMLInputElement | null
+  const file = target?.files?.[0] ?? null
+  if (!file) {
+    return
+  }
+  loading.value = true
+  error.value = ''
+  statusMessage.value = `Loading local file "${file.name}"…`
+  prepareForReload()
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    viewerSrc.value = new Blob([arrayBuffer], { type: file.type || 'application/pdf' })
+    urlInput.value = ''
+  } catch (loadError) {
+    console.error(loadError)
+    error.value = 'Failed to read the selected file.'
+    loading.value = false
+    statusMessage.value = ''
+    viewerSrc.value = null
+  } finally {
+    if (target) {
+      target.value = ''
+    }
+  }
 }
 
 function goPrevious() {
@@ -303,18 +372,6 @@ function finalizeDrawing(shouldPersist: boolean, endPoint?: ViewerPoint) {
   drawingRect.value = null
 }
 
-function onTextSelection(payload: TextSelectionPayload) {
-  if (!payload.overlayRects.length) return
-  overlayRectsInternal.value = [
-    ...overlayRectsInternal.value,
-    ...payload.overlayRects.map((rect) => ({
-      id: crypto.randomUUID(),
-      rect,
-    })),
-  ]
-  statusMessage.value = `Captured ${payload.pdfRects.length} text selection rectangle(s).`
-}
-
 function rectToStyle(rect: ViewerRect) {
   return {
     left: `${rect.x}px`,
@@ -348,11 +405,22 @@ function clamp(value: number, min: number, max: number) {
   padding: 16px;
   display: flex;
   justify-content: center;
-  overflow: auto;
+  overflow: hidden;
   max-height: 720px;
 }
 
 .page-input {
   min-width: 96px;
+}
+
+.hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
 }
 </style>
