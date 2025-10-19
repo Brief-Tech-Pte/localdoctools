@@ -65,6 +65,7 @@ const props = defineProps<{
   rangeChunkSize?: number
   disableAutoFetch?: boolean
   disableStream?: boolean
+  showRawTextLayer?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -89,6 +90,7 @@ const textLayerRef = ref<HTMLDivElement | null>(null)
 const currentViewport = ref<PdfViewport | null>(null)
 
 const { textSelectMode, overlayRects, drawingRectStyle, showDrawingRect } = toRefs(props)
+const showRawTextLayer = computed(() => props.showRawTextLayer ?? false)
 
 const overlayPointerId = ref<number | null>(null)
 const loadRequestId = ref(0)
@@ -133,6 +135,12 @@ watch(
   }
 )
 
+watch(showRawTextLayer, () => {
+  const node = textLayerRef.value
+  if (node) {
+    applyTextLayerDebugStyles(node)
+  }
+})
 onMounted(() => {
   window.addEventListener('resize', handleResize)
 })
@@ -350,9 +358,14 @@ async function renderTextLayer(page: PdfJsTypes.PDFPageProxy, viewport: PdfJsTyp
   try {
     node.style.width = `${viewport.width}px`
     node.style.height = `${viewport.height}px`
+    applyTextLayerViewportStyles(node, viewport)
+    applyTextLayerDebugStyles(node)
     const textLayer = new pdfjsViewer.TextLayerBuilder({ pdfPage: page })
     textLayer.div = node
-    await textLayer.render({ viewport })
+    const textViewport = viewport.clone({ dontFlip: true })
+    await textLayer.render({ viewport: textViewport })
+    node.style.width = `${viewport.width}px`
+    node.style.height = `${viewport.height}px`
   } catch (error) {
     console.warn('Failed to render text layer', error)
   }
@@ -459,7 +472,6 @@ function handleTextSelectionEnd() {
   if (!pdfRects.length) return
 
   emit('text-selection', { overlayRects: merged, pdfRects })
-  selection.removeAllRanges()
 }
 
 function mergeLineBoxes(boxes: OverlayPointRect[]): OverlayPointRect[] {
@@ -521,6 +533,27 @@ function getRelativePoint(event: PointerEvent): ViewerPoint {
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
+
+function applyTextLayerDebugStyles(node: HTMLDivElement) {
+  const color = showRawTextLayer.value ? 'rgba(0, 0, 0, 0.85)' : 'transparent'
+  node.style.setProperty('--pdf-text-layer-color', color)
+  node.style.mixBlendMode = showRawTextLayer.value ? 'multiply' : ''
+}
+
+function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes.PageViewport) {
+  const scale = viewport.scale
+  node.style.setProperty('--scale-factor', `${scale}`)
+  node.style.setProperty('--total-scale-factor', `${scale}`)
+  node.style.setProperty('--user-unit', '1')
+  if (typeof CSS !== 'undefined' && CSS.supports?.('width', 'round(10px, 1px)')) {
+    node.style.setProperty('--scale-round-x', '0px')
+    node.style.setProperty('--scale-round-y', '0px')
+  } else {
+    node.style.removeProperty('--scale-round-x')
+    node.style.removeProperty('--scale-round-y')
+  }
+  node.setAttribute('data-main-rotation', `${viewport.rotation}`)
+}
 </script>
 
 <style scoped>
@@ -570,7 +603,10 @@ function clamp(value: number, min: number, max: number) {
   pointer-events: none;
   user-select: none;
   z-index: 1;
-  color: transparent;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
 }
 
 .textLayer.enabled {
@@ -578,10 +614,12 @@ function clamp(value: number, min: number, max: number) {
   user-select: text;
 }
 
-.textLayer > span {
+.textLayer :is(span, br) {
+  color: var(--pdf-text-layer-color, transparent);
   position: absolute;
-  transform-origin: 0% 0%;
   white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
 }
 
 .textLayer .endOfContent {

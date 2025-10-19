@@ -21,6 +21,11 @@
             <q-btn :loading="loading" label="Load PDF" color="primary" @click="loadPdfFromUrl" />
             <q-btn flat label="Reset overlays" :disable="!overlayRectsInternal.length" @click="clearOverlays" />
             <q-toggle v-model="textSelectMode" label="Text select mode" :disable="!hasDocument" color="primary" />
+            <q-toggle
+              v-model="showRawTextLayer"
+              label="Show text layer overlay"
+              :disable="!hasDocument"
+            />
             <div class="text-caption text-grey-6">
               Use the pointer to draw rectangles, or enable text selection to convert highlighted text into overlay marks.
             </div>
@@ -79,6 +84,7 @@
                 :src="viewerSrc"
                 :page-index="pageIndex"
                 :text-select-mode="textSelectMode"
+                :show-raw-text-layer="showRawTextLayer"
                 :overlay-rects="overlayRects"
                 :drawing-rect-style="drawingRectStyle"
                 :show-drawing-rect="showDrawingRect"
@@ -135,6 +141,7 @@ const pageIndex = ref(0)
 const pageCount = ref(0)
 const currentViewport = ref<PdfViewport | null>(null)
 const textSelectMode = ref(false)
+const showRawTextLayer = ref(false)
 
 const overlayRectsInternal = ref<OverlayRectEntry[]>([])
 const drawingPointerId = ref<number | null>(null)
