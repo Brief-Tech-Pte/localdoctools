@@ -83,6 +83,8 @@
                 :overlay-rects="overlayRects"
                 :drawing-rect-style="drawingRectStyle"
                 :show-drawing-rect="showDrawingRect"
+                :disable-auto-fetch="true"
+                :disable-stream="true"
                 @document-loaded="onDocumentLoaded"
                 @document-unloaded="onDocumentUnloaded"
                 @rendered="onRendered"

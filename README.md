@@ -60,6 +60,16 @@ Requires global tools: `icongenie` (`npm install -g @quasar/icongenie`) and Imag
 npm run icons
 ```
 
+### Start the range-enabled PDF test server
+
+A lightweight Express server can generate and serve a synthetic ~50 MB PDF that honours HTTP range requests—useful when developing the pdf.js viewer.
+
+```bash
+npm run pdf-server
+```
+
+The server listens on port `3100` by default (override with `PDF_SERVER_PORT=3200`). The generated file lives under `tmp/test-pdf.pdf`, which is ignored by Git and re-used between runs once it reaches the target size.
+
 ### Customize the configuration
 
 See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js).

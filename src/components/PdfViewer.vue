@@ -64,6 +64,8 @@ const props = defineProps<{
   minScale?: number
   maxScale?: number
   rangeChunkSize?: number
+  disableAutoFetch?: boolean
+  disableStream?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -101,6 +103,8 @@ let loadingTask: PdfJsTypes.PDFDocumentLoadingTask | null = null
 const minScale = computed(() => props.minScale ?? 0.5)
 const maxScale = computed(() => props.maxScale ?? 2)
 const rangeChunkSize = computed(() => props.rangeChunkSize ?? 65536)
+const disableAutoFetch = computed(() => props.disableAutoFetch ?? false)
+const disableStream = computed(() => props.disableStream ?? false)
 
 watch(
   [() => props.file, () => props.src],
@@ -113,6 +117,19 @@ watch(
     )
   },
   { immediate: true }
+)
+
+watch(
+  () => [props.disableAutoFetch, props.disableStream, props.rangeChunkSize],
+  async () => {
+    if (!props.file && !props.src) return
+    const token = ++loadRequestId.value
+    await loadDocument(
+      props.file ?? null,
+      typeof props.src === 'string' && props.src.trim() ? props.src : null,
+      token
+    )
+  }
 )
 
 watch(
@@ -164,12 +181,17 @@ async function loadDocument(file: File | null, src: string | null, token: number
     if (activeFile) {
       const arrayBuffer = await activeFile.arrayBuffer()
       if (token !== loadRequestId.value) return
-      nextLoadingTask = pdfjs.getDocument({ data: arrayBuffer })
+      nextLoadingTask = pdfjs.getDocument({
+        data: arrayBuffer,
+        disableAutoFetch: disableAutoFetch.value,
+        disableStream: disableStream.value,
+        rangeChunkSize: rangeChunkSize.value,
+      })
     } else if (activeSrc) {
       const documentParams: Parameters<typeof pdfjs.getDocument>[0] = {
         url: activeSrc,
-        disableStream: false,
-        disableAutoFetch: false,
+        disableStream: disableStream.value,
+        disableAutoFetch: disableAutoFetch.value,
         rangeChunkSize: rangeChunkSize.value,
       }
       nextLoadingTask = pdfjs.getDocument(documentParams)
