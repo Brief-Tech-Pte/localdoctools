@@ -117,15 +117,13 @@
           <q-card-section>
             <div v-if="viewerActive" class="viewer-wrapper">
               <PdfViewer
-                :src="viewerSrc"
+                :document="viewerDocument"
                 :page-index="pageIndex"
                 :text-select-mode="textSelectMode"
                 :show-raw-text-layer="showRawTextLayer"
                 :overlay-rects="overlayRects"
                 :drawing-rect-style="drawingRectStyle"
                 :show-drawing-rect="showDrawingRect"
-                :disable-auto-fetch="true"
-                :disable-stream="true"
                 @document-loaded="onDocumentLoaded"
                 @document-unloaded="onDocumentUnloaded"
                 @rendered="onRendered"
@@ -149,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import PdfViewer from 'src/components/PdfViewer.vue'
 import type {
@@ -158,6 +156,8 @@ import type {
   ViewerPoint,
   ViewerRect,
 } from 'src/components/pdfViewerTypes'
+import type * as PdfJsTypes from 'pdfjs-dist'
+import { usePdfDocument } from 'src/composables/usePdfDocument'
 
 interface OverlayRectEntry {
   id: string
@@ -168,7 +168,15 @@ const defaultPdfUrl = '/samples/demo.pdf'
 
 const urlInput = ref(defaultPdfUrl)
 const viewerSrc = ref<string | Blob | null>(defaultPdfUrl)
-const loading = ref(false)
+const {
+  pdfDocument,
+  loading: documentLoading,
+  error: documentError,
+} = usePdfDocument(viewerSrc, {
+  disableAutoFetch: true,
+  disableStream: true,
+})
+const loading = computed(() => documentLoading.value)
 const error = ref('')
 const statusMessage = ref('')
 const pageIndex = ref(0)
@@ -204,8 +212,11 @@ const currentViewportText = computed(() => {
   return `${rounded(width)}×${rounded(height)} @ ${scale.toFixed(2)}×`
 })
 
+const viewerDocument = computed(
+  () => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null
+)
 const hasDocument = computed(() => pageCount.value > 0)
-const viewerActive = computed(() => Boolean(viewerSrc.value))
+const viewerActive = computed(() => Boolean(viewerDocument.value))
 
 const pageInput = computed({
   get: () => activePageDisplay.value || 1,
@@ -227,7 +238,6 @@ async function loadPdfFromUrl() {
     error.value = 'Enter a PDF URL to load.'
     return
   }
-  loading.value = true
   error.value = ''
   statusMessage.value = 'Loading PDF (linearized streams will use range requests when available)…'
   prepareForReload()
@@ -267,7 +277,6 @@ async function handleFileChange(event: Event) {
   if (!file) {
     return
   }
-  loading.value = true
   error.value = ''
   statusMessage.value = `Loading local file "${file.name}"…`
   prepareForReload()
@@ -278,7 +287,6 @@ async function handleFileChange(event: Event) {
   } catch (loadError) {
     console.error(loadError)
     error.value = 'Failed to read the selected file.'
-    loading.value = false
     statusMessage.value = ''
     viewerSrc.value = null
   } finally {
@@ -303,7 +311,6 @@ function goNext() {
 function onDocumentLoaded(payload: { pageCount: number }) {
   pageCount.value = payload.pageCount
   pageIndex.value = 0
-  loading.value = false
   statusMessage.value = `Loaded document with ${payload.pageCount} page(s).`
 }
 
@@ -322,7 +329,6 @@ function onRendered(payload: { viewport: PdfViewport }) {
 
 function onLoadError(payload: { error: unknown }) {
   console.error(payload.error)
-  loading.value = false
   error.value = 'Viewer failed to load the PDF.'
 }
 
@@ -395,6 +401,13 @@ function normalizeRect(
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
+
+watch(documentError, (err) => {
+  if (!err) return
+  console.error(err)
+  error.value = 'Viewer failed to load the PDF.'
+  statusMessage.value = ''
+})
 </script>
 
 <style scoped>

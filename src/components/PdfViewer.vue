@@ -45,8 +45,12 @@ import type {
   ViewerRect,
 } from './pdfViewerTypes'
 
-type PdfJsModule = typeof PdfJsTypes
 type PDFDocumentProxy = PdfJsTypes.PDFDocumentProxy
+
+const globalPdfjsNamespace = globalThis as unknown as { pdfjsLib?: typeof pdfjsLib }
+if (!globalPdfjsNamespace.pdfjsLib) {
+  globalPdfjsNamespace.pdfjsLib = pdfjsLib
+}
 
 interface OverlayRectStyle {
   id: string
@@ -54,7 +58,7 @@ interface OverlayRectStyle {
 }
 
 const props = defineProps<{
-  src?: string | URL | Blob | null
+  document?: PdfJsTypes.PDFDocumentProxy | null
   pageIndex: number
   textSelectMode: boolean
   overlayRects: OverlayRectStyle[]
@@ -62,9 +66,6 @@ const props = defineProps<{
   showDrawingRect?: boolean
   minScale?: number
   maxScale?: number
-  rangeChunkSize?: number
-  disableAutoFetch?: boolean
-  disableStream?: boolean
   showRawTextLayer?: boolean
 }>()
 
@@ -93,38 +94,20 @@ const { textSelectMode, overlayRects, drawingRectStyle, showDrawingRect } = toRe
 const showRawTextLayer = computed(() => props.showRawTextLayer ?? false)
 
 const overlayPointerId = ref<number | null>(null)
-const loadRequestId = ref(0)
 
-let pdfjsModule: PdfJsModule | null = null
-let pdfWorkerInstance: Worker | null = null
 let pdfDoc: PDFDocumentProxy | null = null
 let renderTask: ReturnType<PdfJsTypes.PDFPageProxy['render']> | null = null
-let loadingTask: PdfJsTypes.PDFDocumentLoadingTask | null = null
 
 const minScale = computed(() => props.minScale ?? 0.5)
 const maxScale = computed(() => props.maxScale ?? 2)
-const rangeChunkSize = computed(() => props.rangeChunkSize ?? 65536)
-const disableAutoFetch = computed(() => props.disableAutoFetch ?? false)
-const disableStream = computed(() => props.disableStream ?? false)
 
 watch(
-  () => props.src,
-  async (newSrc) => {
-    const token = ++loadRequestId.value
-    const normalizedSrc = normalizeSrc(newSrc)
-    await loadDocument(normalizedSrc, token)
+  () => props.document ?? null,
+  async (newDocument, oldDocument) => {
+    if (newDocument === oldDocument) return
+    await setDocument(newDocument)
   },
   { immediate: true }
-)
-
-watch(
-  () => [props.disableAutoFetch, props.disableStream, props.rangeChunkSize],
-  async () => {
-    const normalizedSrc = normalizeSrc(props.src)
-    if (!normalizedSrc) return
-    const token = ++loadRequestId.value
-    await loadDocument(normalizedSrc, token)
-  }
 )
 
 watch(
@@ -142,92 +125,27 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   cancelRenderTask()
-  void unloadDocument()
-  void destroyLoadingTask()
-  if (pdfWorkerInstance) {
-    pdfWorkerInstance.terminate()
-    pdfWorkerInstance = null
-  }
+  void setDocument(null)
 })
 
-function normalizeSrc(input: string | URL | Blob | null | undefined): string | Blob | null {
-  if (typeof input === 'string') {
-    const trimmed = input.trim()
-    return trimmed.length ? trimmed : null
-  }
-  if (typeof URL !== 'undefined' && input instanceof URL) {
-    const serialized = input.toString().trim()
-    return serialized.length ? serialized : null
-  }
-  if (input instanceof Blob) {
-    return input
-  }
-  return null
-}
+async function setDocument(nextDocument: PDFDocumentProxy | null) {
+  const current = pdfDoc
+  if (current === nextDocument) return
 
-async function loadDocument(src: string | Blob | null, token: number) {
   cancelRenderTask()
-  const hadDocument = await unloadDocument()
-  await destroyLoadingTask()
 
-  const activeSrc: string | Blob | null = src
-  if (activeSrc === null) {
-    if (!hadDocument) {
-      emit('document-unloaded')
-    }
-    return
+  const hadDocument = Boolean(current)
+  pdfDoc = nextDocument ? markRaw(nextDocument) : null
+  currentViewport.value = null
+
+  if (hadDocument) {
+    emit('document-unloaded')
   }
 
-  let nextLoadingTask: PdfJsTypes.PDFDocumentLoadingTask | null = null
-
-  try {
-    const pdfjs = await ensurePdfJs()
-    if (token !== loadRequestId.value) return
-    if (typeof activeSrc === 'string') {
-      const documentParams: Parameters<typeof pdfjs.getDocument>[0] = {
-        url: activeSrc,
-        disableStream: disableStream.value,
-        disableAutoFetch: disableAutoFetch.value,
-        rangeChunkSize: rangeChunkSize.value,
-      }
-      nextLoadingTask = pdfjs.getDocument(documentParams)
-    } else if (activeSrc instanceof Blob) {
-      const arrayBuffer = await activeSrc.arrayBuffer()
-      if (token !== loadRequestId.value) return
-      const documentParams: Parameters<typeof pdfjs.getDocument>[0] = {
-        data: arrayBuffer,
-        disableAutoFetch: disableAutoFetch.value,
-        disableStream: disableStream.value,
-        rangeChunkSize: rangeChunkSize.value,
-      }
-      nextLoadingTask = pdfjs.getDocument(documentParams)
-    }
-    if (!nextLoadingTask) return
-
-    loadingTask = nextLoadingTask
-    const doc = await nextLoadingTask.promise
-    if (loadingTask === nextLoadingTask) {
-      loadingTask = null
-    }
-
-    if (token !== loadRequestId.value) {
-      await destroyLoadingTask(nextLoadingTask)
-      return
-    }
-
-    pdfDoc = markRaw(doc)
-    emit('document-loaded', { pageCount: doc.numPages })
+  if (pdfDoc) {
+    emit('document-loaded', { pageCount: pdfDoc.numPages })
     await nextTick()
     await renderCurrentPage()
-  } catch (error) {
-    if (nextLoadingTask) {
-      // Ensure we only cancel the task associated with this invocation.
-      await destroyLoadingTask(nextLoadingTask)
-    }
-    if (token !== loadRequestId.value) {
-      return
-    }
-    emit('load-error', { error })
   }
 }
 
@@ -293,52 +211,6 @@ function cancelRenderTask() {
     }
     renderTask = null
   }
-}
-
-async function unloadDocument() {
-  const hadDocument = Boolean(pdfDoc)
-  if (pdfDoc) {
-    try {
-      await pdfDoc.destroy()
-    } catch (error) {
-      console.warn('PDF document destroy failed', error)
-    }
-  }
-  pdfDoc = null
-  currentViewport.value = null
-  if (hadDocument) {
-    emit('document-unloaded')
-  }
-  return hadDocument
-}
-
-async function destroyLoadingTask(task?: PdfJsTypes.PDFDocumentLoadingTask | null) {
-  const target = task ?? loadingTask
-  if (!target) return
-  try {
-    await target.destroy()
-  } catch (error) {
-    console.warn('Failed to destroy PDF loading task', error)
-  } finally {
-    if (!task || loadingTask === target) {
-      loadingTask = null
-    }
-  }
-}
-
-async function ensurePdfJs(): Promise<PdfJsModule> {
-  if (pdfjsModule && pdfWorkerInstance) {
-    return pdfjsModule
-  }
-  const workerModule = await import('pdfjs-dist/build/pdf.worker.mjs?worker')
-  if (!pdfWorkerInstance) {
-    pdfWorkerInstance = new workerModule.default()
-  }
-  pdfjsLib.GlobalWorkerOptions.workerPort = pdfWorkerInstance
-  // Ensure the viewer module can access the core namespace
-  ;(globalThis as unknown as { pdfjsLib?: typeof pdfjsLib }).pdfjsLib = pdfjsLib
-  pdfjsModule = pdfjsLib
-  return pdfjsModule
 }
 
 async function renderTextLayer(page: PdfJsTypes.PDFPageProxy, viewport: PdfJsTypes.PageViewport) {

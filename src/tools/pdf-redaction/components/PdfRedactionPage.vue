@@ -127,16 +127,14 @@
           </q-card-section>
           <q-separator />
           <q-card-section>
-            <div v-if="viewerSrc" class="preview-frame">
+            <div v-if="viewerDocument" class="preview-frame">
               <PdfViewer
-                :src="viewerSrc"
+                :document="viewerDocument"
                 :page-index="activePageIndex"
                 :text-select-mode="textSelectMode"
                 :overlay-rects="overlayRects"
                 :drawing-rect-style="drawingRectStyle"
                 :show-drawing-rect="showDrawingRect"
-                :disable-auto-fetch="true"
-                :disable-stream="true"
                 @document-loaded="handleDocumentLoaded"
                 @document-unloaded="handleDocumentUnloaded"
                 @rendered="handleRendered"
@@ -170,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { exportFile } from 'quasar'
 
 import PdfViewer from 'src/components/PdfViewer.vue'
@@ -179,6 +177,8 @@ import type {
   PdfViewport as ViewerViewport,
   TextSelectionPayload,
 } from 'src/components/pdfViewerTypes'
+import type * as PdfJsTypes from 'pdfjs-dist'
+import { usePdfDocument } from 'src/composables/usePdfDocument'
 import type { PdfRedactionProgress, RedactionMark, RedactionRect } from '../types/redaction'
 import {
   buildRedactionSpec,
@@ -200,6 +200,13 @@ const lastResultBytes = ref<ArrayBuffer | null>(null)
 const pageCount = ref(0)
 const activePageIndex = ref(0)
 const viewerSrc = ref<Blob | null>(null)
+const { pdfDocument, error: documentError } = usePdfDocument(viewerSrc, {
+  disableAutoFetch: true,
+  disableStream: true,
+})
+const viewerDocument = computed(
+  () => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null
+)
 const currentViewport = ref<ViewerViewport | null>(null)
 
 const drawingState = ref<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -546,6 +553,13 @@ async function applyRedactions() {
 function handleProgress(progress: PdfRedactionProgress) {
   statusMessage.value = `Page ${progress.pageIndex + 1}: ${progress.stage}…`
 }
+
+watch(documentError, (err) => {
+  if (!err) return
+  console.error(err)
+  statusMessage.value = 'Failed to load PDF. Please try again.'
+  statusVariant.value = 'error'
+})
 
 function downloadResult() {
   if (!lastResultBytes.value) return
