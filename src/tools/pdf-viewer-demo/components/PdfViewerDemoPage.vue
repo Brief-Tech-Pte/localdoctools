@@ -60,17 +60,12 @@
       </div>
 
       <div class="col-12 col-md-8">
-        <q-card bordered>
-          <q-card-section class="row items-center justify-between">
-            <div class="text-subtitle1">Viewer</div>
-            <div class="text-caption text-grey-7" v-if="hasDocument">
-              {{ activePageDisplay }} / {{ totalPages }} · {{ currentViewportText }} ·
-              {{ scaleDisplay }}
-            </div>
-          </q-card-section>
-          <q-separator v-if="hasDocument" />
-          <q-card-section v-if="hasDocument">
-            <div class="viewer-controls row items-center no-wrap q-gutter-sm">
+        <q-card bordered class="viewer-card">
+          <q-card-section
+            v-if="hasDocument"
+            class="viewer-toolbar row items-center no-wrap q-gutter-sm"
+          >
+            <div class="viewer-toolbar__group row items-center no-wrap q-gutter-xs">
               <q-btn
                 icon="first_page"
                 flat
@@ -117,19 +112,22 @@
                 aria-label="Go to last page"
                 @click="goLast"
               />
-              <q-separator vertical class="q-mx-sm viewer-controls__divider" />
+            </div>
+            <q-separator vertical class="viewer-toolbar__divider" />
+            <div class="viewer-toolbar__group row items-center no-wrap q-gutter-xs">
               <q-btn
                 :icon="textSelectIcon"
-                :color="textSelectMode ? 'primary' : 'grey-7'"
+                :color="'grey-7'"
                 :flat="!textSelectMode"
-                :unelevated="textSelectMode"
                 dense
                 class="q-px-sm"
                 @click="toggleTextSelectMode"
               >
-                {{ textSelectMode ? 'Selection' : 'Pan Overlay' }}
+                <q-tooltip>{{ textSelectMode ? 'Select Mode' : 'Pan Mode' }}</q-tooltip>
               </q-btn>
-              <q-separator vertical class="q-mx-sm viewer-controls__divider" />
+            </div>
+            <q-separator vertical class="viewer-toolbar__divider" />
+            <div class="viewer-toolbar__group row items-center no-wrap q-gutter-xs">
               <q-btn
                 icon="zoom_out"
                 flat
@@ -139,17 +137,27 @@
                 aria-label="Zoom out"
                 @click="zoomOut"
               />
-              <q-select
-                v-model="zoomSelectValue"
-                class="zoom-select"
-                dense
-                outlined
-                :options="zoomOptions"
-                :disable="!hasDocument"
-                emit-value
-                map-options
-                option-disable="separator"
-              />
+              <q-btn flat dense class="zoom-select q-px-xs" :disable="!hasDocument">
+                {{ zoomDisplayValue }}
+                <q-icon name="arrow_drop_down" size="16px" class="q-ml-xs" />
+                <q-menu anchor="bottom left" self="top left">
+                  <q-list class="zoom-menu" padding>
+                    <template v-for="option in zoomOptions" :key="option.label">
+                      <q-separator v-if="option.separator" spaced />
+                      <q-item
+                        v-else
+                        clickable
+                        v-close-popup
+                        dense
+                        :active="isZoomOptionActive(option)"
+                        @click="handleZoomOptionClick(option.value)"
+                      >
+                        <q-item-section>{{ option.label }}</q-item-section>
+                      </q-item>
+                    </template>
+                  </q-list>
+                </q-menu>
+              </q-btn>
               <q-btn
                 icon="zoom_in"
                 flat
@@ -159,40 +167,29 @@
                 aria-label="Zoom in"
                 @click="zoomIn"
               />
-              <div class="zoom-display text-caption text-weight-medium">
-                {{ scaleDisplay }}
-              </div>
-              <q-btn
-                icon="fit_screen"
-                dense
-                :color="isAutoScale ? 'primary' : 'grey-7'"
-                :flat="!isAutoScale"
-                :unelevated="isAutoScale"
-                aria-label="Fit to width"
-                @click="resetZoom"
-              />
             </div>
           </q-card-section>
           <q-separator />
-          <q-card-section>
-            <div v-if="viewerActive" class="viewer-wrapper">
-              <PdfViewer
-                :document="viewerDocument"
-                :page-index="pageIndex"
-                :text-select-mode="textSelectMode"
-                :enable-pan="!textSelectMode"
-                :scale="manualScale"
-                :min-scale="minScale"
-                :max-scale="maxScale"
-                :overlay-rects="emptyOverlayRects"
-                :show-drawing-rect="false"
-                @document-loaded="onDocumentLoaded"
-                @document-unloaded="onDocumentUnloaded"
-                @rendered="onRendered"
-                @load-error="onLoadError"
-                @render-error="onRenderError"
-                @scale-change="onScaleChange"
-              />
+          <q-card-section class="viewer-stage">
+            <div v-if="viewerActive" class="viewer-shell">
+              <div class="viewer-wrapper">
+                <PdfViewer
+                  :document="viewerDocument"
+                  :page-index="pageIndex"
+                  :text-select-mode="textSelectMode"
+                  :enable-pan="!textSelectMode"
+                  :scale="manualScale"
+                  :min-scale="minScale"
+                  :max-scale="maxScale"
+                  :overlay-rects="emptyOverlayRects"
+                  :show-drawing-rect="false"
+                  @document-loaded="onDocumentLoaded"
+                  @document-unloaded="onDocumentUnloaded"
+                  @load-error="onLoadError"
+                  @render-error="onRenderError"
+                  @scale-change="onScaleChange"
+                />
+              </div>
             </div>
             <div v-else class="text-grey-6">
               Enter a URL and click “Load PDF” to render it here. The default demo document is
@@ -209,7 +206,6 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import PdfViewer from 'src/components/PdfViewer.vue'
-import type { PdfViewport } from 'src/components/pdfViewerTypes'
 import type * as PdfJsTypes from 'pdfjs-dist'
 import { usePdfDocument } from 'src/composables/usePdfDocument'
 
@@ -230,16 +226,15 @@ const error = ref('')
 const statusMessage = ref('')
 const pageIndex = ref(0)
 const pageCount = ref(0)
-const currentViewport = ref<PdfViewport | null>(null)
 const textSelectMode = ref(true)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const manualScale = ref<number | null>(null)
 const effectiveScale = ref(1)
 
 const minScale = 0.5
-const maxScale = 2
+const maxScale = 4
 const zoomStep = 0.1
-const zoomPresetValues = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
+const zoomPresetValues = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const
 
 const emptyOverlayRects: Array<{ id: string; style: Record<string, string> }> = []
 
@@ -248,19 +243,15 @@ const activePageDisplay = computed(() => (pageCount.value ? pageIndex.value + 1 
 const canGoPrevious = computed(() => pageCount.value > 0 && pageIndex.value > 0)
 const canGoNext = computed(() => pageCount.value > 0 && pageIndex.value < pageCount.value - 1)
 const textSelectIcon = computed(() => (textSelectMode.value ? 'text_fields' : 'pan_tool'))
-const currentViewportText = computed(() => {
-  if (!currentViewport.value) return ''
-  const { width, height, scale } = currentViewport.value
-  const rounded = (value: number) => Math.round(value)
-  return `${rounded(width)}×${rounded(height)} @ ${scale.toFixed(2)}×`
-})
-const isAutoScale = computed(() => manualScale.value === null)
+
 const zoomBaseline = computed(() => manualScale.value ?? effectiveScale.value)
 const canZoomIn = computed(() => zoomBaseline.value < maxScale - 0.001)
 const canZoomOut = computed(() => zoomBaseline.value > minScale + 0.001)
-const scaleDisplay = computed(() => `${Math.round(effectiveScale.value * 100)}%`)
-const zoomOptions = computed(() => {
-  const options: Array<{ label: string; value?: string | number; separator?: boolean }> = [
+
+type ZoomOption = { label: string; value?: string | number; separator?: boolean }
+
+const zoomOptions = computed<ZoomOption[]>(() => {
+  const options: ZoomOption[] = [
     { label: 'Actual Size', value: 'actual' },
     { label: 'Page Width', value: 'page-width' },
     { separator: true, label: 'separator' },
@@ -285,32 +276,46 @@ const zoomOptions = computed(() => {
   }
   return options
 })
-const zoomSelectValue = computed<string | number>({
-  get: () => {
-    if (manualScale.value === null) {
-      return 'page-width'
-    }
-    if (approxEquals(manualScale.value, 1)) {
-      return 'actual'
-    }
-    const presetMatch = zoomPresetValues.find((preset) =>
-      approxEquals(preset, manualScale.value as number)
-    )
-    if (presetMatch !== undefined && !approxEquals(presetMatch, 1)) {
-      return presetMatch
-    }
-    return manualScale.value
-  },
-  set: (value) => {
-    if (value === 'page-width') {
-      manualScale.value = null
-    } else if (value === 'actual') {
-      manualScale.value = 1
-    } else if (typeof value === 'number') {
-      manualScale.value = clamp(value, minScale, maxScale)
-    }
-  },
+const zoomSelectValue = computed<string | number>(() => {
+  if (manualScale.value === null) {
+    return 'page-width'
+  }
+  if (approxEquals(manualScale.value, 1)) {
+    return 'actual'
+  }
+  const presetMatch = zoomPresetValues.find((preset) =>
+    approxEquals(preset, manualScale.value as number)
+  )
+  if (presetMatch !== undefined) {
+    return presetMatch
+  }
+  return manualScale.value
 })
+const zoomDisplayValue = computed(() => `${Math.round(effectiveScale.value * 100)}%`)
+
+function applyZoomValue(value: string | number) {
+  if (value === 'page-width') {
+    manualScale.value = null
+  } else if (value === 'actual') {
+    manualScale.value = 1
+  } else if (typeof value === 'number') {
+    manualScale.value = clamp(value, minScale, maxScale)
+  }
+}
+
+function handleZoomOptionClick(value?: string | number) {
+  if (value === undefined) return
+  applyZoomValue(value)
+}
+
+function isZoomOptionActive(option: ZoomOption) {
+  if (option.separator || option.value === undefined) return false
+  const current = zoomSelectValue.value
+  if (typeof option.value === 'number' && typeof current === 'number') {
+    return approxEquals(option.value, current)
+  }
+  return option.value === current
+}
 
 const viewerDocument = computed(() => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null)
 const hasDocument = computed(() => pageCount.value > 0)
@@ -349,7 +354,6 @@ async function loadPdfFromUrl() {
 function prepareForReload() {
   pageIndex.value = 0
   pageCount.value = 0
-  currentViewport.value = null
   effectiveScale.value = 1
 }
 
@@ -422,10 +426,6 @@ function zoomOut() {
   manualScale.value = next
 }
 
-function resetZoom() {
-  manualScale.value = null
-}
-
 function onScaleChange(payload: { scale: number; isAuto: boolean }) {
   effectiveScale.value = payload.scale
   if (payload.isAuto && manualScale.value !== null) {
@@ -442,15 +442,10 @@ function onDocumentLoaded(payload: { pageCount: number }) {
 function onDocumentUnloaded() {
   pageCount.value = 0
   pageIndex.value = 0
-  currentViewport.value = null
   effectiveScale.value = 1
   if (!viewerActive.value) {
     statusMessage.value = ''
   }
-}
-
-function onRendered(payload: { viewport: PdfViewport }) {
-  currentViewport.value = payload.viewport
 }
 
 function onLoadError(payload: { error: unknown }) {
@@ -480,22 +475,18 @@ watch(documentError, (err) => {
 </script>
 
 <style scoped>
-.viewer-wrapper {
-  border: 1px solid var(--q-primary);
-  border-radius: 4px;
-  background: #fafafa;
-  padding: 16px;
-  display: flex;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.viewer-controls {
+.viewer-toolbar {
+  background: white;
+  border-bottom: 1px solid var(--q-grey-4);
+  padding: 0px 16px;
+  gap: 14px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-.viewer-controls__divider {
-  height: 24px;
+.viewer-toolbar__group {
+  display: flex;
+  align-items: center;
 }
 
 .zoom-display {
@@ -504,11 +495,40 @@ watch(documentError, (err) => {
 }
 
 .zoom-select {
-  min-width: 150px;
+  min-width: 40px;
+  justify-content: space-between;
+}
+
+.zoom-menu {
+  min-width: 140px;
 }
 
 .page-input {
   min-width: 96px;
+}
+
+.viewer-stage {
+  background: var(--q-grey-1);
+  padding: 16px 20px;
+  border-top: 1px solid var(--q-grey-4);
+}
+
+.viewer-shell {
+  background: #f3f6fb;
+  border: 1px solid var(--q-grey-4);
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  min-height: 420px;
+}
+
+.viewer-wrapper {
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
 }
 
 .hidden-input {
@@ -520,5 +540,23 @@ watch(documentError, (err) => {
   border: 0;
   clip: rect(0, 0, 0, 0);
   overflow: hidden;
+}
+
+@media (max-width: 767px) {
+  .viewer-toolbar {
+    gap: 12px;
+  }
+
+  .viewer-toolbar__divider {
+    display: none;
+  }
+
+  .viewer-stage {
+    padding: 16px 12px;
+  }
+
+  .viewer-shell {
+    padding: 14px;
+  }
 }
 </style>

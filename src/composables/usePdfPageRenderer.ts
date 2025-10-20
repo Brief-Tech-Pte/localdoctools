@@ -1,13 +1,4 @@
-import {
-  computed,
-  markRaw,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch,
-  type Ref,
-} from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
 import type * as PdfJsTypes from 'pdfjs-dist'
 import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer.mjs'
@@ -53,7 +44,7 @@ export function usePdfPageRenderer({
   const lastEmittedScale = ref<number | null>(null)
 
   const minScale = computed(() => minScaleProp.value ?? 0.5)
-  const maxScale = computed(() => maxScaleProp.value ?? 2)
+  const maxScale = computed(() => maxScaleProp.value ?? 4)
   const manualScale = computed(() => {
     const raw = scale.value
     if (raw === null || raw === undefined) return null
@@ -312,4 +303,3 @@ export function usePdfPageRenderer({
     renderCurrentPage,
   }
 }
-
