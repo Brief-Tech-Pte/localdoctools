@@ -157,7 +157,7 @@ import type {
   PdfViewport,
   TextSelectionPayload,
 } from './pdfViewerTypes'
-import { clamp } from '../utils/clamp'
+import { clamp } from '../../utils/clamp'
 
 interface OverlayRectStyle {
   id: string

@@ -168,14 +168,14 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { exportFile } from 'quasar'
 
-import PdfViewerShell from 'src/components/PdfViewerShell.vue'
+import PdfViewerShell from 'src/components/pdf-viewer/PdfViewerShell.vue'
 import type {
   OverlayPointerPayload,
   PdfViewport as ViewerViewport,
   TextSelectionPayload,
-} from 'src/components/pdfViewerTypes'
+} from 'src/components/pdf-viewer/pdfViewerTypes'
 import type * as PdfJsTypes from 'pdfjs-dist'
-import { usePdfDocument } from 'src/composables/usePdfDocument'
+import { usePdfDocument } from 'src/components/pdf-viewer/composables/usePdfDocument'
 import type { PdfRedactionProgress, RedactionMark, RedactionRect } from '../types/redaction'
 import {
   buildRedactionSpec,

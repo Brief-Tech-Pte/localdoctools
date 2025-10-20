@@ -97,8 +97,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type * as PdfJsTypes from 'pdfjs-dist'
-import PdfViewerShell from 'src/components/PdfViewerShell.vue'
-import { usePdfDocument } from 'src/composables/usePdfDocument'
+import PdfViewerShell from 'src/components/pdf-viewer/PdfViewerShell.vue'
+import { usePdfDocument } from 'src/components/pdf-viewer/composables/usePdfDocument'
 
 const defaultPdfUrl = '/samples/demo.pdf'
 

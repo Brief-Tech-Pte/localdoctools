@@ -2,9 +2,9 @@ import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch, ty
 import * as pdfjsLib from 'pdfjs-dist'
 import type * as PdfJsTypes from 'pdfjs-dist'
 import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer.mjs'
-import type { PdfViewerEmit, PdfViewport, ViewportDimensions } from '../components/pdfViewerTypes'
-import type { CanvasLoadedCallback } from '../components/pdfViewerTypes'
-import { clamp } from '../utils/clamp'
+import type { PdfViewerEmit, PdfViewport, ViewportDimensions } from '../pdfViewerTypes'
+import type { CanvasLoadedCallback } from '../pdfViewerTypes'
+import { clamp } from '../../../utils/clamp'
 
 type PDFDocumentProxy = PdfJsTypes.PDFDocumentProxy
 

@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
-import type { PdfRect, PdfViewport, ViewerRect } from '../components/pdfViewerTypes'
-import { clamp } from '../utils/clamp'
+import type { PdfRect, PdfViewport, ViewerRect } from '../pdfViewerTypes'
+import { clamp } from '../../../utils/clamp'
 
 export interface UseTextSelectionBridgeOptions {
   overlayRef: Ref<HTMLDivElement | null>
@@ -114,4 +114,3 @@ export function useTextSelectionBridge({
     handleTextSelectionEnd,
   }
 }
-

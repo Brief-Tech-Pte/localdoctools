@@ -49,9 +49,9 @@ import type {
   PdfViewport,
   TextSelectionPayload,
 } from './pdfViewerTypes'
-import { usePdfPageRenderer } from '../composables/usePdfPageRenderer'
-import { usePdfOverlayPan } from '../composables/usePdfOverlayPan'
-import { useTextSelectionBridge } from '../composables/useTextSelectionBridge'
+import { usePdfPageRenderer } from './composables/usePdfPageRenderer'
+import { usePdfOverlayPan } from './composables/usePdfOverlayPan'
+import { useTextSelectionBridge } from './composables/useTextSelectionBridge'
 
 interface OverlayRectStyle {
   id: string
