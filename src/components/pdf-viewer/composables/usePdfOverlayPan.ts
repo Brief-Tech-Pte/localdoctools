@@ -1,6 +1,6 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import type { PdfViewerEmit, PdfViewport, ViewerPoint } from '../pdfViewerTypes'
-import { clamp } from '../../../utils/clamp'
+import { clamp } from '../utils/clamp'
 
 export interface UsePdfOverlayPanOptions {
   overlayRef: Ref<HTMLDivElement | null>

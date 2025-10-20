@@ -4,7 +4,7 @@ import type * as PdfJsTypes from 'pdfjs-dist'
 import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer.mjs'
 import type { PdfViewerEmit, PdfViewport, ViewportDimensions } from '../pdfViewerTypes'
 import type { CanvasLoadedCallback } from '../pdfViewerTypes'
-import { clamp } from '../../../utils/clamp'
+import { clamp } from '../utils/clamp'
 
 type PDFDocumentProxy = PdfJsTypes.PDFDocumentProxy
 
