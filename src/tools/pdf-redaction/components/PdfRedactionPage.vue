@@ -63,6 +63,14 @@
               @click="applyRedactions"
             />
             <q-btn flat color="primary" label="Clear" @click="clearAll" />
+            <q-btn
+              flat
+              dense
+              icon="download"
+              :disable="!downloadUrl"
+              label="Download result"
+              @click="downloadResult"
+            />
           </q-card-section>
         </q-card>
 
@@ -100,58 +108,47 @@
       </div>
 
       <div class="col-12 col-md-8">
-        <q-card bordered>
-          <q-card-section>
-            <div class="row items-center justify-between">
-              <div class="text-subtitle1">Preview</div>
-              <div class="row items-center q-gutter-sm">
-                <div class="text-caption text-grey-7">
-                  Page {{ activePageDisplay }} / {{ totalPagesDisplay }}
-                </div>
-                <q-toggle
-                  v-model="textSelectMode"
-                  color="primary"
-                  :disable="!hasDocument"
-                  label="Text select"
-                />
-                <q-btn
-                  flat
-                  dense
-                  icon="download"
-                  :disable="!downloadUrl"
-                  label="Download"
-                  @click="downloadResult"
-                />
-              </div>
-            </div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section>
-            <div v-if="viewerDocument" class="preview-frame">
-              <PdfViewer
-                :document="viewerDocument"
-                :page-index="activePageIndex"
-                :text-select-mode="textSelectMode"
-                :overlay-rects="overlayRects"
-                :drawing-rect-style="drawingRectStyle"
-                :show-drawing-rect="showDrawingRect"
-                @document-loaded="handleDocumentLoaded"
-                @document-unloaded="handleDocumentUnloaded"
-                @rendered="handleRendered"
-                @load-error="handleLoadError"
-                @render-error="handleRenderError"
-                @overlay-pointer-down="handleOverlayPointerDown"
-                @overlay-pointer-move="handleOverlayPointerMove"
-                @overlay-pointer-up="handleOverlayPointerUp"
-                @overlay-pointer-cancel="handleOverlayPointerCancel"
-                @text-selection="handleTextSelection"
-              />
-            </div>
-            <div v-else class="text-grey-6">
-              Select a PDF to render the current page and start drawing redactions.
-            </div>
-          </q-card-section>
-        </q-card>
+        <PdfViewerShell
+          v-model:page-index="activePageIndex"
+          v-model:text-select-mode="textSelectMode"
+          :document="viewerDocument"
+          :overlay-rects="overlayRects"
+          :drawing-rect-style="drawingRectStyle"
+          :show-drawing-rect="showDrawingRect"
+          :enable-pan="false"
+          @document-loaded="handleDocumentLoaded"
+          @document-unloaded="handleDocumentUnloaded"
+          @rendered="handleRendered"
+          @load-error="handleLoadError"
+          @render-error="handleRenderError"
+          @overlay-pointer-down="handleOverlayPointerDown"
+          @overlay-pointer-move="handleOverlayPointerMove"
+          @overlay-pointer-up="handleOverlayPointerUp"
+          @overlay-pointer-cancel="handleOverlayPointerCancel"
+          @text-selection="handleTextSelection"
+        >
+          <template #toolbar-end>
+            <q-btn
+              dense
+              flat
+              round
+              :icon="textSelectMode ? 'text_fields' : 'crop_square'"
+              :color="textSelectMode ? 'primary' : 'red-5'"
+              :unelevated="!textSelectMode"
+              aria-label="Toggle drawing mode"
+              @click="textSelectMode = !textSelectMode"
+            >
+              <q-tooltip>
+                {{ textSelectMode ? 'Text selection' : 'Draw redactions' }}
+              </q-tooltip>
+            </q-btn>
+
+            <q-separator vertical inset spaced />
+          </template>
+          <template #empty>
+            Select a PDF to render the current page and start drawing redactions.
+          </template>
+        </PdfViewerShell>
 
         <q-card bordered class="q-mt-lg">
           <q-card-section>
@@ -171,7 +168,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { exportFile } from 'quasar'
 
-import PdfViewer from 'src/components/PdfViewer.vue'
+import PdfViewerShell from 'src/components/PdfViewerShell.vue'
 import type {
   OverlayPointerPayload,
   PdfViewport as ViewerViewport,
@@ -252,8 +249,6 @@ const statusClass = computed(() => {
   return 'text-grey-7'
 })
 
-const activePageDisplay = computed(() => (hasDocument.value ? activePageIndex.value + 1 : 0))
-const totalPagesDisplay = computed(() => (hasDocument.value ? maxPageIndex.value + 1 : 0))
 const canGoPrevious = computed(() => hasDocument.value && activePageIndex.value > 0)
 const canGoNext = computed(() => hasDocument.value && activePageIndex.value < maxPageIndex.value)
 
