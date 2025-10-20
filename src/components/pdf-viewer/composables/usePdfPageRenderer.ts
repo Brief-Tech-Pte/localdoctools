@@ -166,15 +166,21 @@ export function usePdfPageRenderer({
 
     cancelRenderTask()
 
-    canvas.width = Math.floor(viewport.width)
-    canvas.height = Math.floor(viewport.height)
-    canvas.style.width = `${viewport.width}px`
-    canvas.style.height = `${viewport.height}px`
+    const devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+    const outputScale = Math.max(devicePixelRatio, 1)
+    const displayWidth = viewport.width
+    const displayHeight = viewport.height
+
+    canvas.width = Math.floor(displayWidth * outputScale)
+    canvas.height = Math.floor(displayHeight * outputScale)
+    canvas.style.width = `${displayWidth}px`
+    canvas.style.height = `${displayHeight}px`
 
     const task = page.render({
       canvasContext: context,
       viewport,
       canvas,
+      transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
     })
     renderTask = task
 
