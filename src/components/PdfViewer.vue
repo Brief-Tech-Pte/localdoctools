@@ -1,5 +1,10 @@
 <template>
-  <div ref="viewerRef" class="page-viewer">
+  <div
+    ref="viewerRef"
+    class="page-viewer"
+    :class="{ pannable: canPan, 'is-panning': isPanning }"
+    :style="viewerStyle"
+  >
     <canvas ref="canvasRef" class="page-canvas" />
     <div
       v-if="currentViewport && showTextLayer"
@@ -13,7 +18,11 @@
       v-if="currentViewport"
       ref="overlayRef"
       class="page-overlay"
-      :class="{ disabled: textSelectMode }"
+      :class="{
+        disabled: textSelectMode,
+        pannable: canPan,
+        dragging: isPanning,
+      }"
       @pointerdown="handleOverlayPointerDown"
       @pointermove="handleOverlayPointerMove"
       @pointerup="handleOverlayPointerUp"
@@ -32,10 +41,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, toRefs, watch } from 'vue'
-import * as pdfjsLib from 'pdfjs-dist'
+import { computed, nextTick, ref, toRef, toRefs, watch } from 'vue'
+import type { CSSProperties } from 'vue'
 import type * as PdfJsTypes from 'pdfjs-dist'
-import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer.mjs'
 import type {
   CanvasLoadedCallback,
   OverlayPointerPayload,
@@ -44,15 +52,9 @@ import type {
   TextSelectionPayload,
   ViewerPoint,
   ViewerRect,
-  ViewportDimensions,
 } from './pdfViewerTypes'
-
-type PDFDocumentProxy = PdfJsTypes.PDFDocumentProxy
-
-const globalPdfjsNamespace = globalThis as unknown as { pdfjsLib?: typeof pdfjsLib }
-if (!globalPdfjsNamespace.pdfjsLib) {
-  globalPdfjsNamespace.pdfjsLib = pdfjsLib
-}
+import { usePdfPageRenderer } from '../composables/usePdfPageRenderer'
+import { clamp } from '../utils/clamp'
 
 interface OverlayRectStyle {
   id: string
@@ -72,10 +74,12 @@ const props = withDefaults(
     showTextLayer?: boolean
     afterCanvasLoaded?: Record<number, CanvasLoadedCallback>
     scale?: number | null
+    enablePan?: boolean
   }>(),
   {
     showTextLayer: true,
     scale: null,
+    enablePan: false,
   }
 )
 
@@ -99,221 +103,80 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const overlayRef = ref<HTMLDivElement | null>(null)
 const viewerRef = ref<HTMLDivElement | null>(null)
 const textLayerRef = ref<HTMLDivElement | null>(null)
-const currentViewport = ref<PdfViewport | null>(null)
-const lastEmittedScale = ref<number | null>(null)
+const panOffset = ref({ x: 0, y: 0 })
+const panPointerOrigin = ref({ x: 0, y: 0 })
+const panOffsetOrigin = ref({ x: 0, y: 0 })
+const panBounds = ref({ minX: 0, maxX: 0, minY: 0, maxY: 0 })
+const isPanning = ref(false)
 
 const { textSelectMode, overlayRects, drawingRectStyle, showDrawingRect, showTextLayer } =
   toRefs(props)
+const enablePan = toRef(props, 'enablePan')
+const documentRef = toRef(props, 'document')
+const pageIndexRef = toRef(props, 'pageIndex')
+const scaleRef = toRef(props, 'scale')
+const minScaleRef = toRef(props, 'minScale')
+const maxScaleRef = toRef(props, 'maxScale')
+const afterCanvasLoadedRef = toRef(props, 'afterCanvasLoaded')
+
+const { currentViewport } = usePdfPageRenderer({
+  document: documentRef,
+  pageIndex: pageIndexRef,
+  scale: scaleRef,
+  minScale: minScaleRef,
+  maxScale: maxScaleRef,
+  showTextLayer,
+  afterCanvasLoaded: afterCanvasLoadedRef,
+  canvasRef,
+  viewerRef,
+  textLayerRef,
+  emit,
+})
 
 const overlayPointerId = ref<number | null>(null)
 
-let pdfDoc: PDFDocumentProxy | null = null
-let renderTask: ReturnType<PdfJsTypes.PDFPageProxy['render']> | null = null
-
-const minScale = computed(() => props.minScale ?? 0.5)
-const maxScale = computed(() => props.maxScale ?? 2)
-const manualScale = computed(() => {
-  if (props.scale === null || props.scale === undefined) return null
-  const numeric = Number(props.scale)
-  if (!Number.isFinite(numeric) || numeric <= 0) return null
-  return clamp(numeric, minScale.value, maxScale.value)
+const canPan = computed(() => enablePan.value && !textSelectMode.value)
+const viewerStyle = computed<CSSProperties>(() => {
+  const { x, y } = panOffset.value
+  return {
+    transform: `translate3d(${x}px, ${y}px, 0)`,
+  }
 })
 
-watch(
-  () => props.document ?? null,
-  async (newDocument, oldDocument) => {
-    if (newDocument === oldDocument) return
-    await setDocument(newDocument)
-  },
-  { immediate: true }
-)
-
-watch(
-  () => props.pageIndex,
-  async (newIndex, oldIndex) => {
-    if (newIndex === oldIndex) return
-    await renderCurrentPage()
-  }
-)
-
-watch(manualScale, async (newScale, oldScale) => {
-  if (newScale === oldScale) return
-  if (!pdfDoc) return
-  cancelRenderTask()
-  await renderCurrentPage()
-})
-
-watch(
-  () => [minScale.value, maxScale.value],
-  async ([newMin, newMax], [oldMin, oldMax]) => {
-    if (oldMin === undefined && oldMax === undefined) return
-    if (newMin === oldMin && newMax === oldMax) return
-    if (!pdfDoc) return
-    cancelRenderTask()
-    await renderCurrentPage()
-  }
-)
-
-watch(showTextLayer, async (enabled) => {
-  if (!pdfDoc) return
+watch(canPan, (enabled) => {
   if (!enabled) {
-    clearTextLayer()
-    return
-  }
-  if (!currentViewport.value) return
-  const targetIndex = clamp(props.pageIndex, 0, Math.max(pdfDoc.numPages - 1, 0))
-  const pageNumber = targetIndex + 1
-  try {
-    const page = await pdfDoc.getPage(pageNumber)
-    const viewport = page.getViewport({ scale: currentViewport.value.scale })
-    await nextTick()
-    await renderTextLayer(page, viewport)
-  } catch (error) {
-    console.warn('Failed to render text layer after enabling', error)
+    stopPan()
   }
 })
 
-onMounted(() => {
-  window.addEventListener('resize', handleResize)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
-  cancelRenderTask()
-  void setDocument(null)
-})
-
-async function setDocument(nextDocument: PDFDocumentProxy | null) {
-  const current = pdfDoc
-  if (current === nextDocument) return
-
-  cancelRenderTask()
-
-  const hadDocument = Boolean(current)
-  pdfDoc = nextDocument ? markRaw(nextDocument) : null
-  currentViewport.value = null
-  lastEmittedScale.value = null
-
-  if (hadDocument) {
-    emit('document-unloaded')
-  }
-
-  if (pdfDoc) {
-    emit('document-loaded', { pageCount: pdfDoc.numPages })
-    await nextTick()
-    await renderCurrentPage()
-  }
-}
-
-async function renderCurrentPage() {
-  if (!pdfDoc || !canvasRef.value) return
-  const targetIndex = clamp(props.pageIndex, 0, Math.max(pdfDoc.numPages - 1, 0))
-  const pageNumber = targetIndex + 1
-  const page = await pdfDoc.getPage(pageNumber)
-  const baseViewport = page.getViewport({ scale: 1 })
-  await nextTick()
-
-  const containerElement = viewerRef.value?.parentElement ?? viewerRef.value
-  const containerWidth = containerElement?.clientWidth ?? baseViewport.width
-  const autoScale = containerWidth ? containerWidth / baseViewport.width : 1
-  const requestedScale = manualScale.value ?? autoScale
-  const scale = clamp(requestedScale, minScale.value, maxScale.value)
-  const viewport = page.getViewport({ scale })
-  const canvas = canvasRef.value
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  cancelRenderTask()
-
-  canvas.width = Math.floor(viewport.width)
-  canvas.height = Math.floor(viewport.height)
-  canvas.style.width = `${viewport.width}px`
-  canvas.style.height = `${viewport.height}px`
-
-  const task = page.render({
-    canvasContext: context,
-    viewport,
-    canvas,
-  })
-  renderTask = task
-
-  try {
-    await task.promise
-    invokeAfterCanvasLoaded(pageNumber, canvas, baseViewport)
-  } catch (error) {
-    if ((error as { name?: string }).name !== 'RenderingCancelledException') {
-      emit('render-error', { error })
-      console.error(error)
+watch(
+  currentViewport,
+  (viewport) => {
+    if (!viewport) {
+      stopPan()
+      panBounds.value = { minX: 0, maxX: 0, minY: 0, maxY: 0 }
+      setPanOffset(0, 0)
+      return
     }
-    return
-  } finally {
-    renderTask = null
-  }
-
-  currentViewport.value = {
-    width: viewport.width,
-    height: viewport.height,
-    scale,
-  }
-  emit('rendered', { viewport: currentViewport.value })
-  if (lastEmittedScale.value !== scale) {
-    lastEmittedScale.value = scale
-    emit('scale-change', { scale, isAuto: manualScale.value === null })
-  }
-
-  await nextTick()
-  if (showTextLayer.value) {
-    await renderTextLayer(page, viewport)
-  } else {
-    clearTextLayer()
-  }
-}
-
-function cancelRenderTask() {
-  if (renderTask) {
-    try {
-      renderTask.cancel()
-    } catch (error) {
-      console.warn('Render task cancel failed', error)
-    }
-    renderTask = null
-  }
-}
-
-async function renderTextLayer(page: PdfJsTypes.PDFPageProxy, viewport: PdfJsTypes.PageViewport) {
-  let node = textLayerRef.value
-  if (!node) {
-    await nextTick()
-    node = textLayerRef.value
-  }
-  if (!node) return
-  node.innerHTML = ''
-  try {
-    node.style.width = `${viewport.width}px`
-    node.style.height = `${viewport.height}px`
-    applyTextLayerViewportStyles(node, viewport)
-    const textLayer = new pdfjsViewer.TextLayerBuilder({ pdfPage: page })
-    textLayer.div = node
-    const textViewport = viewport.clone({ dontFlip: true })
-    await textLayer.render({ viewport: textViewport })
-    // Reapply sizing – render resets inline styles in some builds
-    node.style.width = `${viewport.width}px`
-    node.style.height = `${viewport.height}px`
-  } catch (error) {
-    console.warn('Failed to render text layer', error)
-  }
-}
-
-function handleResize() {
-  if (!pdfDoc) return
-  cancelRenderTask()
-  void renderCurrentPage()
-}
+    void nextTick().then(() => {
+      updatePanBounds()
+    })
+  },
+  { flush: 'post' }
+)
 
 function handleOverlayPointerDown(event: PointerEvent) {
-  if (!currentViewport.value || textSelectMode.value || !overlayRef.value) return
+  if (!currentViewport.value || !overlayRef.value) return
+  const panIntent = shouldPan(event)
+  if (textSelectMode.value && !panIntent) return
   overlayRef.value.setPointerCapture(event.pointerId)
   overlayPointerId.value = event.pointerId
+  if (panIntent) {
+    startPan(event)
+    event.preventDefault()
+    return
+  }
+  if (textSelectMode.value) return
   const point = getRelativePoint(event)
   event.preventDefault()
   emit('overlay-pointer-down', {
@@ -325,6 +188,12 @@ function handleOverlayPointerDown(event: PointerEvent) {
 
 function handleOverlayPointerMove(event: PointerEvent) {
   if (overlayPointerId.value !== event.pointerId || !currentViewport.value) return
+  if (isPanning.value) {
+    event.preventDefault()
+    updatePan(event)
+    return
+  }
+  if (textSelectMode.value) return
   const point = getRelativePoint(event)
   event.preventDefault()
   emit('overlay-pointer-move', {
@@ -336,7 +205,14 @@ function handleOverlayPointerMove(event: PointerEvent) {
 
 function handleOverlayPointerUp(event: PointerEvent) {
   if (overlayPointerId.value !== event.pointerId) return
+  if (isPanning.value) {
+    event.preventDefault()
+    endPan()
+    releasePointerCapture()
+    return
+  }
   releasePointerCapture()
+  if (textSelectMode.value) return
   const point = getRelativePoint(event)
   event.preventDefault()
   emit('overlay-pointer-up', {
@@ -348,8 +224,48 @@ function handleOverlayPointerUp(event: PointerEvent) {
 
 function handleOverlayPointerCancel(event: PointerEvent) {
   if (overlayPointerId.value !== event.pointerId) return
+  const wasPanning = isPanning.value
+  if (wasPanning) {
+    endPan()
+    event.preventDefault()
+  }
   releasePointerCapture()
+  if (wasPanning) return
   emit('overlay-pointer-cancel', { pointerId: event.pointerId })
+}
+
+function shouldPan(event?: PointerEvent) {
+  if (!canPan.value) return false
+  if (!event) return true
+  if (event.pointerType === 'touch' || event.pointerType === 'pen') return true
+  if (typeof event.buttons === 'number') {
+    return (event.buttons & 1) === 1
+  }
+  return event.button === 0
+}
+
+function startPan(event: PointerEvent) {
+  isPanning.value = true
+  panPointerOrigin.value = { x: event.clientX, y: event.clientY }
+  panOffsetOrigin.value = { ...panOffset.value }
+}
+
+function updatePan(event: PointerEvent) {
+  const deltaX = event.clientX - panPointerOrigin.value.x
+  const deltaY = event.clientY - panPointerOrigin.value.y
+  setPanOffset(panOffsetOrigin.value.x + deltaX, panOffsetOrigin.value.y + deltaY)
+}
+
+function endPan() {
+  if (!isPanning.value) return
+  isPanning.value = false
+  setPanOffset(panOffset.value.x, panOffset.value.y)
+}
+
+function stopPan() {
+  if (!isPanning.value) return
+  isPanning.value = false
+  releasePointerCapture()
 }
 
 function releasePointerCapture() {
@@ -361,6 +277,55 @@ function releasePointerCapture() {
     }
   }
   overlayPointerId.value = null
+}
+
+function setPanOffset(x: number, y: number) {
+  const { minX, maxX, minY, maxY } = panBounds.value
+  const clampedX = clamp(x, minX, maxX)
+  const clampedY = clamp(y, minY, maxY)
+  if (panOffset.value.x === clampedX && panOffset.value.y === clampedY) return
+  panOffset.value = { x: clampedX, y: clampedY }
+}
+
+function updatePanBounds() {
+  const viewport = currentViewport.value
+  if (!viewport) {
+    panBounds.value = { minX: 0, maxX: 0, minY: 0, maxY: 0 }
+    setPanOffset(0, 0)
+    return
+  }
+  const containerElement = viewerRef.value?.parentElement ?? viewerRef.value
+  if (!containerElement) return
+  const containerWidth = containerElement.clientWidth || viewport.width
+  const containerHeight = containerElement.clientHeight || viewport.height
+  let horizontalPadding = 0
+  let verticalPadding = 0
+  if (typeof window !== 'undefined') {
+    const styles = window.getComputedStyle(containerElement)
+    const paddingLeft = parseFloat(styles.paddingLeft || '0')
+    const paddingRight = parseFloat(styles.paddingRight || '0')
+    const paddingTop = parseFloat(styles.paddingTop || '0')
+    const paddingBottom = parseFloat(styles.paddingBottom || '0')
+    if (Number.isFinite(paddingLeft) && Number.isFinite(paddingRight)) {
+      horizontalPadding = paddingLeft + paddingRight
+    }
+    if (Number.isFinite(paddingTop) && Number.isFinite(paddingBottom)) {
+      verticalPadding = paddingTop + paddingBottom
+    }
+  }
+  const usableWidth = Math.max(containerWidth - horizontalPadding, 0)
+  const usableHeight = Math.max(containerHeight - verticalPadding, 0)
+  const overflowX = Math.max(viewport.width - usableWidth, 0)
+  const overflowY = Math.max(viewport.height - usableHeight, 0)
+  const horizontalRange = overflowX / 2
+  const verticalRange = overflowY
+  panBounds.value = {
+    minX: -horizontalRange,
+    maxX: horizontalRange,
+    minY: -verticalRange,
+    maxY: 0,
+  }
+  setPanOffset(panOffset.value.x, panOffset.value.y)
 }
 
 function handleTextSelectionEnd() {
@@ -462,57 +427,6 @@ function getRelativePoint(event: PointerEvent): ViewerPoint {
   const y = clamp(event.clientY - bounds.top, 0, viewport.height)
   return { x, y }
 }
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
-}
-
-function clearTextLayer() {
-  if (textLayerRef.value) {
-    textLayerRef.value.innerHTML = ''
-  }
-}
-
-function invokeAfterCanvasLoaded(
-  pageNumber: number,
-  canvasElement: HTMLCanvasElement,
-  baseViewport: PdfJsTypes.PageViewport
-) {
-  const callbacks = props.afterCanvasLoaded
-  if (!callbacks) return
-  const callback = callbacks[pageNumber]
-  if (!callback) return
-  const baseWidth = baseViewport.width || 1
-  const baseHeight = baseViewport.height || 1
-  const dimensions: ViewportDimensions = {
-    width: baseViewport.width,
-    height: baseViewport.height,
-    canvasWidth: canvasElement.width,
-    canvasHeight: canvasElement.height,
-    widthRatio: canvasElement.width / baseWidth,
-    heightRatio: canvasElement.height / baseHeight,
-  }
-  try {
-    callback(canvasElement, dimensions)
-  } catch (error) {
-    console.warn('afterCanvasLoaded callback failed', error)
-  }
-}
-
-function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes.PageViewport) {
-  const scale = viewport.scale
-  node.style.setProperty('--scale-factor', `${scale}`)
-  node.style.setProperty('--total-scale-factor', `${scale}`)
-  node.style.setProperty('--user-unit', '1')
-  if (typeof CSS !== 'undefined' && CSS.supports?.('width', 'round(10px, 1px)')) {
-    node.style.setProperty('--scale-round-x', '0px')
-    node.style.setProperty('--scale-round-y', '0px')
-  } else {
-    node.style.removeProperty('--scale-round-x')
-    node.style.removeProperty('--scale-round-y')
-  }
-  node.setAttribute('data-main-rotation', `${viewport.rotation}`)
-}
 </script>
 
 <style scoped>
@@ -521,6 +435,15 @@ function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes
   display: inline-block;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   background: #fff;
+  will-change: transform;
+}
+
+.page-viewer.pannable {
+  cursor: grab;
+}
+
+.page-viewer.pannable.is-panning {
+  cursor: grabbing;
 }
 
 .page-canvas {
@@ -536,12 +459,21 @@ function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes
   inset: 0;
   cursor: crosshair;
   touch-action: none;
+  user-select: none;
 }
 
 .page-overlay.disabled {
   pointer-events: none;
   cursor: text;
   z-index: 2;
+}
+
+.page-overlay.pannable {
+  cursor: grab;
+}
+
+.page-overlay.pannable.dragging {
+  cursor: grabbing;
 }
 
 .overlay-rect {
@@ -575,6 +507,7 @@ function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes
 
 .textLayer :is(br) {
   -webkit-user-select: none;
+  user-select: none;
 }
 
 .textLayer :is(span, br) {

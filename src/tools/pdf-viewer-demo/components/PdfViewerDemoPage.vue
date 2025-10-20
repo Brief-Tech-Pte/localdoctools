@@ -163,6 +163,7 @@
                 :document="viewerDocument"
                 :page-index="pageIndex"
                 :text-select-mode="textSelectMode"
+                :enable-pan="!textSelectMode"
                 :scale="manualScale"
                 :min-scale="minScale"
                 :max-scale="maxScale"

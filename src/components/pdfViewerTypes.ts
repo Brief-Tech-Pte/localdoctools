@@ -45,3 +45,17 @@ export interface TextSelectionPayload {
   overlayRects: ViewerRect[]
   pdfRects: PdfRect[]
 }
+
+export interface PdfViewerEmit {
+  (event: 'document-loaded', payload: { pageCount: number }): void
+  (event: 'document-unloaded'): void
+  (event: 'rendered', payload: { viewport: PdfViewport }): void
+  (event: 'load-error', payload: { error: unknown }): void
+  (event: 'render-error', payload: { error: unknown }): void
+  (event: 'overlay-pointer-down', payload: OverlayPointerPayload): void
+  (event: 'overlay-pointer-move', payload: OverlayPointerPayload): void
+  (event: 'overlay-pointer-up', payload: OverlayPointerPayload): void
+  (event: 'overlay-pointer-cancel', payload: { pointerId: number }): void
+  (event: 'text-selection', payload: TextSelectionPayload): void
+  (event: 'scale-change', payload: { scale: number; isAuto: boolean }): void
+}
