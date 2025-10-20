@@ -37,26 +37,9 @@
               <div class="col-auto">
                 <q-btn outline icon="upload_file" label="Load Local PDF" @click="triggerFileDialog" />
               </div>
-              <div class="col-auto">
-                <q-btn
-                  flat
-                  label="Reset overlays"
-                  :disable="!overlayRectsInternal.length"
-                  @click="clearOverlays"
-                />
-              </div>
-              <div class="col-auto">
-                <q-btn
-                  flat
-                  label="Toggle text layer overlay"
-                  :disable="!hasDocument"
-                  :class="{ 'text-primary': showRawTextLayer }"
-                  @click="toggleTextLayerDebug"
-                />
-              </div>
             </div>
             <div class="text-caption text-grey-6">
-              Text selection is always enabled; highlight copyable text to capture overlay rectangles.
+              Text selection is enabled so you can copy text directly from the PDF.
             </div>
             <div v-if="statusMessage" class="text-body2">{{ statusMessage }}</div>
             <input
@@ -120,19 +103,13 @@
                 :document="viewerDocument"
                 :page-index="pageIndex"
                 :text-select-mode="textSelectMode"
-                :show-raw-text-layer="showRawTextLayer"
-                :overlay-rects="overlayRects"
-                :drawing-rect-style="drawingRectStyle"
-                :show-drawing-rect="showDrawingRect"
+                :overlay-rects="emptyOverlayRects"
+                :show-drawing-rect="false"
                 @document-loaded="onDocumentLoaded"
                 @document-unloaded="onDocumentUnloaded"
                 @rendered="onRendered"
                 @load-error="onLoadError"
                 @render-error="onRenderError"
-                @overlay-pointer-down="onOverlayPointerDown"
-                @overlay-pointer-move="onOverlayPointerMove"
-                @overlay-pointer-up="onOverlayPointerUp"
-                @overlay-pointer-cancel="onOverlayPointerCancel"
               />
             </div>
             <div v-else class="text-grey-6">
@@ -150,19 +127,9 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import PdfViewer from 'src/components/PdfViewer.vue'
-import type {
-  OverlayPointerPayload,
-  PdfViewport,
-  ViewerPoint,
-  ViewerRect,
-} from 'src/components/pdfViewerTypes'
+import type { PdfViewport } from 'src/components/pdfViewerTypes'
 import type * as PdfJsTypes from 'pdfjs-dist'
 import { usePdfDocument } from 'src/composables/usePdfDocument'
-
-interface OverlayRectEntry {
-  id: string
-  rect: ViewerRect
-}
 
 const defaultPdfUrl = '/samples/demo.pdf'
 
@@ -183,23 +150,9 @@ const pageIndex = ref(0)
 const pageCount = ref(0)
 const currentViewport = ref<PdfViewport | null>(null)
 const textSelectMode = ref(true)
-const showRawTextLayer = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
-const overlayRectsInternal = ref<OverlayRectEntry[]>([])
-const drawingPointerId = ref<number | null>(null)
-const pointerOrigin = ref<ViewerPoint | null>(null)
-const drawingRect = ref<ViewerRect | null>(null)
-
-const overlayRects = computed(() => {
-  return overlayRectsInternal.value.map((entry) => ({
-    id: entry.id,
-    style: rectToStyle(entry.rect),
-  }))
-})
-
-const drawingRectStyle = computed(() => (drawingRect.value ? rectToStyle(drawingRect.value) : {}))
-const showDrawingRect = computed(() => Boolean(drawingRect.value))
+const emptyOverlayRects: Array<{ id: string; style: Record<string, string> }> = []
 
 const totalPages = computed(() => (pageCount.value ? pageCount.value : 0))
 const activePageDisplay = computed(() => (pageCount.value ? pageIndex.value + 1 : 0))
@@ -249,26 +202,13 @@ async function loadPdfFromUrl() {
 }
 
 function prepareForReload() {
-  overlayRectsInternal.value = []
-  drawingRect.value = null
-  drawingPointerId.value = null
-  pointerOrigin.value = null
   pageIndex.value = 0
   pageCount.value = 0
   currentViewport.value = null
 }
 
-function clearOverlays() {
-  overlayRectsInternal.value = []
-  statusMessage.value = 'Cleared overlay rectangles.'
-}
-
 function triggerFileDialog() {
   fileInputRef.value?.click()
-}
-
-function toggleTextLayerDebug() {
-  showRawTextLayer.value = !showRawTextLayer.value
 }
 
 async function handleFileChange(event: Event) {
@@ -335,67 +275,6 @@ function onLoadError(payload: { error: unknown }) {
 function onRenderError(payload: { error: unknown }) {
   console.error(payload.error)
   error.value = 'Unable to render the current page.'
-}
-
-function onOverlayPointerDown(payload: OverlayPointerPayload) {
-  drawingPointerId.value = payload.pointerId
-  pointerOrigin.value = payload.point
-  drawingRect.value = {
-    x: payload.point.x,
-    y: payload.point.y,
-    width: 0,
-    height: 0,
-  }
-}
-
-function onOverlayPointerMove(payload: OverlayPointerPayload) {
-  if (drawingPointerId.value !== payload.pointerId || !pointerOrigin.value) return
-  drawingRect.value = normalizeRect(pointerOrigin.value, payload.point)
-}
-
-function onOverlayPointerUp(payload: OverlayPointerPayload) {
-  if (drawingPointerId.value !== payload.pointerId) return
-  finalizeDrawing(true, payload.point)
-}
-
-function onOverlayPointerCancel(payload: { pointerId: number }) {
-  if (drawingPointerId.value !== payload.pointerId) return
-  finalizeDrawing(false)
-}
-
-function finalizeDrawing(shouldPersist: boolean, endPoint?: ViewerPoint) {
-  if (shouldPersist && pointerOrigin.value && endPoint) {
-    const rect = normalizeRect(pointerOrigin.value, endPoint)
-    if (rect.width >= 4 && rect.height >= 4) {
-      overlayRectsInternal.value = [
-        ...overlayRectsInternal.value,
-        { id: crypto.randomUUID(), rect },
-      ]
-    }
-  }
-  drawingPointerId.value = null
-  pointerOrigin.value = null
-  drawingRect.value = null
-}
-
-function rectToStyle(rect: ViewerRect) {
-  return {
-    left: `${rect.x}px`,
-    top: `${rect.y}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-  }
-}
-
-function normalizeRect(
-  origin: ViewerPoint,
-  point: ViewerPoint
-): ViewerRect {
-  const left = Math.min(origin.x, point.x)
-  const top = Math.min(origin.y, point.y)
-  const width = Math.abs(point.x - origin.x)
-  const height = Math.abs(point.y - origin.y)
-  return { x: left, y: top, width, height }
 }
 
 function clamp(value: number, min: number, max: number) {

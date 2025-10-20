@@ -2,7 +2,7 @@
   <div ref="viewerRef" class="page-viewer">
     <canvas ref="canvasRef" class="page-canvas" />
     <div
-      v-if="currentViewport"
+      v-if="currentViewport && showTextLayer"
       ref="textLayerRef"
       class="textLayer"
       :class="{ enabled: textSelectMode }"
@@ -57,17 +57,22 @@ interface OverlayRectStyle {
   style: Record<string, string>
 }
 
-const props = defineProps<{
-  document?: PdfJsTypes.PDFDocumentProxy | null
-  pageIndex: number
-  textSelectMode: boolean
-  overlayRects: OverlayRectStyle[]
-  drawingRectStyle?: Record<string, string>
-  showDrawingRect?: boolean
-  minScale?: number
-  maxScale?: number
-  showRawTextLayer?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    document?: PdfJsTypes.PDFDocumentProxy | null
+    pageIndex: number
+    textSelectMode: boolean
+    overlayRects: OverlayRectStyle[]
+    drawingRectStyle?: Record<string, string>
+    showDrawingRect?: boolean
+    minScale?: number
+    maxScale?: number
+    showTextLayer?: boolean
+  }>(),
+  {
+    showTextLayer: true,
+  }
+)
 
 const emit = defineEmits<{
   (e: 'document-loaded', payload: { pageCount: number }): void
@@ -90,8 +95,8 @@ const viewerRef = ref<HTMLDivElement | null>(null)
 const textLayerRef = ref<HTMLDivElement | null>(null)
 const currentViewport = ref<PdfViewport | null>(null)
 
-const { textSelectMode, overlayRects, drawingRectStyle, showDrawingRect } = toRefs(props)
-const showRawTextLayer = computed(() => props.showRawTextLayer ?? false)
+const { textSelectMode, overlayRects, drawingRectStyle, showDrawingRect, showTextLayer } =
+  toRefs(props)
 
 const overlayPointerId = ref<number | null>(null)
 
@@ -117,6 +122,25 @@ watch(
     await renderCurrentPage()
   }
 )
+
+watch(showTextLayer, async (enabled) => {
+  if (!pdfDoc) return
+  if (!enabled) {
+    clearTextLayer()
+    return
+  }
+  if (!currentViewport.value) return
+  const targetIndex = clamp(props.pageIndex, 0, Math.max(pdfDoc.numPages - 1, 0))
+  const pageNumber = targetIndex + 1
+  try {
+    const page = await pdfDoc.getPage(pageNumber)
+    const viewport = page.getViewport({ scale: currentViewport.value.scale })
+    await nextTick()
+    await renderTextLayer(page, viewport)
+  } catch (error) {
+    console.warn('Failed to render text layer after enabling', error)
+  }
+})
 
 onMounted(() => {
   window.addEventListener('resize', handleResize)
@@ -199,7 +223,11 @@ async function renderCurrentPage() {
   emit('rendered', { viewport: currentViewport.value })
 
   await nextTick()
-  await renderTextLayer(page, viewport)
+  if (showTextLayer.value) {
+    await renderTextLayer(page, viewport)
+  } else {
+    clearTextLayer()
+  }
 }
 
 function cancelRenderTask() {
@@ -225,7 +253,6 @@ async function renderTextLayer(page: PdfJsTypes.PDFPageProxy, viewport: PdfJsTyp
     node.style.width = `${viewport.width}px`
     node.style.height = `${viewport.height}px`
     applyTextLayerViewportStyles(node, viewport)
-    applyTextLayerDebugStyles(node)
     const textLayer = new pdfjsViewer.TextLayerBuilder({ pdfPage: page })
     textLayer.div = node
     const textViewport = viewport.clone({ dontFlip: true })
@@ -401,6 +428,12 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function clearTextLayer() {
+  if (textLayerRef.value) {
+    textLayerRef.value.innerHTML = ''
+  }
+}
+
 function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes.PageViewport) {
   const scale = viewport.scale
   node.style.setProperty('--scale-factor', `${scale}`)
@@ -416,11 +449,6 @@ function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes
   node.setAttribute('data-main-rotation', `${viewport.rotation}`)
 }
 
-function applyTextLayerDebugStyles(node: HTMLDivElement) {
-  const color = showRawTextLayer.value ? 'rgba(0, 0, 0, 0.85)' : 'transparent'
-  node.style.setProperty('--pdf-text-layer-color', color)
-  node.style.mixBlendMode = showRawTextLayer.value ? 'multiply' : ''
-}
 </script>
 
 <style scoped>
