@@ -204,9 +204,7 @@ const { pdfDocument, error: documentError } = usePdfDocument(viewerSrc, {
   disableAutoFetch: true,
   disableStream: true,
 })
-const viewerDocument = computed(
-  () => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null
-)
+const viewerDocument = computed(() => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null)
 const currentViewport = ref<ViewerViewport | null>(null)
 
 const drawingState = ref<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -586,7 +584,6 @@ function serializeMarks(marks: Array<RedactionMark & { id: string }>): Redaction
   display: flex;
   justify-content: center;
   overflow: hidden;
-  max-height: 720px;
 }
 
 .page-input {

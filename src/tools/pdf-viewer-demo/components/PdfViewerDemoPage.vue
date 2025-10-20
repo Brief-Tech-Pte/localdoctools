@@ -35,7 +35,12 @@
             </div>
             <div class="row q-col-gutter-sm">
               <div class="col-auto">
-                <q-btn outline icon="upload_file" label="Load Local PDF" @click="triggerFileDialog" />
+                <q-btn
+                  outline
+                  icon="upload_file"
+                  label="Load Local PDF"
+                  @click="triggerFileDialog"
+                />
               </div>
             </div>
             <div class="text-caption text-grey-6">
@@ -59,7 +64,8 @@
           <q-card-section class="row items-center justify-between">
             <div class="text-subtitle1">Viewer</div>
             <div class="text-caption text-grey-7" v-if="hasDocument">
-              {{ activePageDisplay }} / {{ totalPages }} · {{ currentViewportText }} · {{ scaleDisplay }}
+              {{ activePageDisplay }} / {{ totalPages }} · {{ currentViewportText }} ·
+              {{ scaleDisplay }}
             </div>
           </q-card-section>
           <q-separator v-if="hasDocument" />
@@ -133,9 +139,17 @@
                 aria-label="Zoom out"
                 @click="zoomOut"
               />
-              <div class="zoom-display text-caption text-weight-medium">
-                {{ scaleDisplay }}
-              </div>
+              <q-select
+                v-model="zoomSelectValue"
+                class="zoom-select"
+                dense
+                outlined
+                :options="zoomOptions"
+                :disable="!hasDocument"
+                emit-value
+                map-options
+                option-disable="separator"
+              />
               <q-btn
                 icon="zoom_in"
                 flat
@@ -145,6 +159,9 @@
                 aria-label="Zoom in"
                 @click="zoomIn"
               />
+              <div class="zoom-display text-caption text-weight-medium">
+                {{ scaleDisplay }}
+              </div>
               <q-btn
                 icon="fit_screen"
                 dense
@@ -222,6 +239,7 @@ const effectiveScale = ref(1)
 const minScale = 0.5
 const maxScale = 2
 const zoomStep = 0.1
+const zoomPresetValues = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
 
 const emptyOverlayRects: Array<{ id: string; style: Record<string, string> }> = []
 
@@ -241,10 +259,60 @@ const zoomBaseline = computed(() => manualScale.value ?? effectiveScale.value)
 const canZoomIn = computed(() => zoomBaseline.value < maxScale - 0.001)
 const canZoomOut = computed(() => zoomBaseline.value > minScale + 0.001)
 const scaleDisplay = computed(() => `${Math.round(effectiveScale.value * 100)}%`)
+const zoomOptions = computed(() => {
+  const options: Array<{ label: string; value?: string | number; separator?: boolean }> = [
+    { label: 'Actual Size', value: 'actual' },
+    { label: 'Page Width', value: 'page-width' },
+    { separator: true, label: 'separator' },
+  ]
+  for (const preset of zoomPresetValues) {
+    options.push({
+      label: `${Math.round(preset * 100)}%`,
+      value: preset,
+    })
+  }
+  const currentScale = manualScale.value
+  if (currentScale !== null) {
+    const alreadyIncluded =
+      approxEquals(currentScale, 1) ||
+      zoomPresetValues.some((preset) => approxEquals(preset, currentScale))
+    if (!alreadyIncluded) {
+      options.push({
+        label: `${Math.round(currentScale * 100)}%`,
+        value: currentScale,
+      })
+    }
+  }
+  return options
+})
+const zoomSelectValue = computed<string | number>({
+  get: () => {
+    if (manualScale.value === null) {
+      return 'page-width'
+    }
+    if (approxEquals(manualScale.value, 1)) {
+      return 'actual'
+    }
+    const presetMatch = zoomPresetValues.find((preset) =>
+      approxEquals(preset, manualScale.value as number)
+    )
+    if (presetMatch !== undefined && !approxEquals(presetMatch, 1)) {
+      return presetMatch
+    }
+    return manualScale.value
+  },
+  set: (value) => {
+    if (value === 'page-width') {
+      manualScale.value = null
+    } else if (value === 'actual') {
+      manualScale.value = 1
+    } else if (typeof value === 'number') {
+      manualScale.value = clamp(value, minScale, maxScale)
+    }
+  },
+})
 
-const viewerDocument = computed(
-  () => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null
-)
+const viewerDocument = computed(() => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null)
 const hasDocument = computed(() => pageCount.value > 0)
 const viewerActive = computed(() => Boolean(viewerDocument.value))
 
@@ -395,6 +463,10 @@ function onRenderError(payload: { error: unknown }) {
   error.value = 'Unable to render the current page.'
 }
 
+function approxEquals(a: number, b: number) {
+  return Math.abs(a - b) < 0.001
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
@@ -416,7 +488,6 @@ watch(documentError, (err) => {
   display: flex;
   justify-content: center;
   overflow: hidden;
-  max-height: 720px;
 }
 
 .viewer-controls {
@@ -430,6 +501,10 @@ watch(documentError, (err) => {
 .zoom-display {
   min-width: 56px;
   text-align: center;
+}
+
+.zoom-select {
+  min-width: 150px;
 }
 
 .page-input {
