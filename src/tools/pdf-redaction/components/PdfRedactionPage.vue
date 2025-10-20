@@ -108,7 +108,7 @@
       </div>
 
       <div class="col-12 col-md-8">
-        <PdfViewerShell
+        <PdfViewer
           v-model:page-index="activePageIndex"
           v-model:text-select-mode="textSelectMode"
           :document="viewerDocument"
@@ -148,7 +148,7 @@
           <template #empty>
             Select a PDF to render the current page and start drawing redactions.
           </template>
-        </PdfViewerShell>
+        </PdfViewer>
 
         <q-card bordered class="q-mt-lg">
           <q-card-section>
@@ -168,7 +168,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { exportFile } from 'quasar'
 
-import PdfViewerShell from 'src/components/pdf-viewer/PdfViewerShell.vue'
+import PdfViewer from 'src/components/pdf-viewer/PdfViewer.vue'
 import type {
   OverlayPointerPayload,
   PdfViewport as ViewerViewport,

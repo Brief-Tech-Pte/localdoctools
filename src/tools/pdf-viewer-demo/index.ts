@@ -5,7 +5,7 @@ export const pdfViewerDemoTool: ToolDefinition = {
   label: 'PDF Viewer Demo',
   icon: 'visibility',
   shortDescription: 'Standalone harness to exercise the shared PDF viewer with arbitrary PDFs.',
-  maturity: 'experimental',
+  maturity: 'beta',
   route: {
     name: 'pdf-viewer-demo',
     path: 'tools/pdf-viewer-demo',

@@ -60,7 +60,7 @@
       </div>
 
       <div class="col-12 col-md-8">
-        <PdfViewerShell
+        <PdfViewer
           v-model:text-select-mode="textSelectMode"
           :document="viewerDocument"
           :overlay-rects="emptyOverlayRects"
@@ -75,7 +75,7 @@
               flat
               round
               :icon="textSelectMode ? 'text_fields' : 'pan_tool'"
-              :color="textSelectMode ? 'primary' : 'grey-6'"
+              color="grey-6"
               :unelevated="textSelectMode"
               aria-label="Toggle text selection"
               @click="textSelectMode = !textSelectMode"
@@ -88,7 +88,7 @@
             Enter a URL and click “Load PDF” to render it here. The default demo document is
             <code>/samples/demo.pdf</code>.
           </template>
-        </PdfViewerShell>
+        </PdfViewer>
       </div>
     </div>
   </q-page>
@@ -97,7 +97,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type * as PdfJsTypes from 'pdfjs-dist'
-import PdfViewerShell from 'src/components/pdf-viewer/PdfViewerShell.vue'
+import PdfViewer from 'src/components/pdf-viewer/PdfViewer.vue'
 import { usePdfDocument } from 'src/components/pdf-viewer/composables/usePdfDocument'
 
 const defaultPdfUrl = '/samples/demo.pdf'
@@ -222,7 +222,6 @@ watch(documentError, (err) => {
   opacity: 0.35;
   margin: 0 8px;
 }
-
 
 .hidden-input {
   position: absolute;
