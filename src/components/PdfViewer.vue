@@ -37,12 +37,14 @@ import * as pdfjsLib from 'pdfjs-dist'
 import type * as PdfJsTypes from 'pdfjs-dist'
 import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer.mjs'
 import type {
+  CanvasLoadedCallback,
   OverlayPointerPayload,
   PdfRect,
   PdfViewport,
   TextSelectionPayload,
   ViewerPoint,
   ViewerRect,
+  ViewportDimensions,
 } from './pdfViewerTypes'
 
 type PDFDocumentProxy = PdfJsTypes.PDFDocumentProxy
@@ -68,9 +70,12 @@ const props = withDefaults(
     minScale?: number
     maxScale?: number
     showTextLayer?: boolean
+    afterCanvasLoaded?: Record<number, CanvasLoadedCallback>
+    scale?: number | null
   }>(),
   {
     showTextLayer: true,
+    scale: null,
   }
 )
 
@@ -85,6 +90,7 @@ const emit = defineEmits<{
   (e: 'overlay-pointer-up', payload: OverlayPointerPayload): void
   (e: 'overlay-pointer-cancel', payload: { pointerId: number }): void
   (e: 'text-selection', payload: TextSelectionPayload): void
+  (e: 'scale-change', payload: { scale: number; isAuto: boolean }): void
 }>()
 
 type OverlayPointRect = ViewerRect
@@ -94,6 +100,7 @@ const overlayRef = ref<HTMLDivElement | null>(null)
 const viewerRef = ref<HTMLDivElement | null>(null)
 const textLayerRef = ref<HTMLDivElement | null>(null)
 const currentViewport = ref<PdfViewport | null>(null)
+const lastEmittedScale = ref<number | null>(null)
 
 const { textSelectMode, overlayRects, drawingRectStyle, showDrawingRect, showTextLayer } =
   toRefs(props)
@@ -105,6 +112,12 @@ let renderTask: ReturnType<PdfJsTypes.PDFPageProxy['render']> | null = null
 
 const minScale = computed(() => props.minScale ?? 0.5)
 const maxScale = computed(() => props.maxScale ?? 2)
+const manualScale = computed(() => {
+  if (props.scale === null || props.scale === undefined) return null
+  const numeric = Number(props.scale)
+  if (!Number.isFinite(numeric) || numeric <= 0) return null
+  return clamp(numeric, minScale.value, maxScale.value)
+})
 
 watch(
   () => props.document ?? null,
@@ -119,6 +132,24 @@ watch(
   () => props.pageIndex,
   async (newIndex, oldIndex) => {
     if (newIndex === oldIndex) return
+    await renderCurrentPage()
+  }
+)
+
+watch(manualScale, async (newScale, oldScale) => {
+  if (newScale === oldScale) return
+  if (!pdfDoc) return
+  cancelRenderTask()
+  await renderCurrentPage()
+})
+
+watch(
+  () => [minScale.value, maxScale.value],
+  async ([newMin, newMax], [oldMin, oldMax]) => {
+    if (oldMin === undefined && oldMax === undefined) return
+    if (newMin === oldMin && newMax === oldMax) return
+    if (!pdfDoc) return
+    cancelRenderTask()
     await renderCurrentPage()
   }
 )
@@ -161,6 +192,7 @@ async function setDocument(nextDocument: PDFDocumentProxy | null) {
   const hadDocument = Boolean(current)
   pdfDoc = nextDocument ? markRaw(nextDocument) : null
   currentViewport.value = null
+  lastEmittedScale.value = null
 
   if (hadDocument) {
     emit('document-unloaded')
@@ -181,9 +213,11 @@ async function renderCurrentPage() {
   const baseViewport = page.getViewport({ scale: 1 })
   await nextTick()
 
-  const containerWidth = viewerRef.value?.clientWidth ?? baseViewport.width
-  const rawScale = containerWidth ? containerWidth / baseViewport.width : 1
-  const scale = clamp(rawScale, minScale.value, maxScale.value)
+  const containerElement = viewerRef.value?.parentElement ?? viewerRef.value
+  const containerWidth = containerElement?.clientWidth ?? baseViewport.width
+  const autoScale = containerWidth ? containerWidth / baseViewport.width : 1
+  const requestedScale = manualScale.value ?? autoScale
+  const scale = clamp(requestedScale, minScale.value, maxScale.value)
   const viewport = page.getViewport({ scale })
   const canvas = canvasRef.value
   const context = canvas.getContext('2d')
@@ -205,6 +239,7 @@ async function renderCurrentPage() {
 
   try {
     await task.promise
+    invokeAfterCanvasLoaded(pageNumber, canvas, baseViewport)
   } catch (error) {
     if ((error as { name?: string }).name !== 'RenderingCancelledException') {
       emit('render-error', { error })
@@ -221,6 +256,10 @@ async function renderCurrentPage() {
     scale,
   }
   emit('rendered', { viewport: currentViewport.value })
+  if (lastEmittedScale.value !== scale) {
+    lastEmittedScale.value = scale
+    emit('scale-change', { scale, isAuto: manualScale.value === null })
+  }
 
   await nextTick()
   if (showTextLayer.value) {
@@ -434,6 +473,32 @@ function clearTextLayer() {
   }
 }
 
+function invokeAfterCanvasLoaded(
+  pageNumber: number,
+  canvasElement: HTMLCanvasElement,
+  baseViewport: PdfJsTypes.PageViewport
+) {
+  const callbacks = props.afterCanvasLoaded
+  if (!callbacks) return
+  const callback = callbacks[pageNumber]
+  if (!callback) return
+  const baseWidth = baseViewport.width || 1
+  const baseHeight = baseViewport.height || 1
+  const dimensions: ViewportDimensions = {
+    width: baseViewport.width,
+    height: baseViewport.height,
+    canvasWidth: canvasElement.width,
+    canvasHeight: canvasElement.height,
+    widthRatio: canvasElement.width / baseWidth,
+    heightRatio: canvasElement.height / baseHeight,
+  }
+  try {
+    callback(canvasElement, dimensions)
+  } catch (error) {
+    console.warn('afterCanvasLoaded callback failed', error)
+  }
+}
+
 function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes.PageViewport) {
   const scale = viewport.scale
   node.style.setProperty('--scale-factor', `${scale}`)
@@ -448,7 +513,6 @@ function applyTextLayerViewportStyles(node: HTMLDivElement, viewport: PdfJsTypes
   }
   node.setAttribute('data-main-rotation', `${viewport.rotation}`)
 }
-
 </script>
 
 <style scoped>

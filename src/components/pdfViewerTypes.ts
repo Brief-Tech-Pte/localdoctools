@@ -21,6 +21,20 @@ export interface PdfViewport {
   scale: number
 }
 
+export interface ViewportDimensions {
+  width: number
+  height: number
+  canvasWidth: number
+  canvasHeight: number
+  widthRatio: number
+  heightRatio: number
+}
+
+export type CanvasLoadedCallback = (
+  canvasElement: HTMLCanvasElement,
+  viewport: ViewportDimensions
+) => void
+
 export interface OverlayPointerPayload {
   pointerId: number
   point: ViewerPoint

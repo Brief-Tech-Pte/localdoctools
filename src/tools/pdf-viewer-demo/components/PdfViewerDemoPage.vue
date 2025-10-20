@@ -51,15 +51,36 @@
             />
             <div v-if="error" class="text-negative">{{ error }}</div>
           </q-card-section>
-          <q-separator />
-          <q-card-section>
-            <div class="row items-center no-wrap q-gutter-sm">
+        </q-card>
+      </div>
+
+      <div class="col-12 col-md-8">
+        <q-card bordered>
+          <q-card-section class="row items-center justify-between">
+            <div class="text-subtitle1">Viewer</div>
+            <div class="text-caption text-grey-7" v-if="hasDocument">
+              {{ activePageDisplay }} / {{ totalPages }} · {{ currentViewportText }} · {{ scaleDisplay }}
+            </div>
+          </q-card-section>
+          <q-separator v-if="hasDocument" />
+          <q-card-section v-if="hasDocument">
+            <div class="viewer-controls row items-center no-wrap q-gutter-sm">
+              <q-btn
+                icon="first_page"
+                flat
+                round
+                dense
+                :disable="!canGoPrevious"
+                aria-label="Go to first page"
+                @click="goFirst"
+              />
               <q-btn
                 icon="chevron_left"
                 flat
                 round
                 dense
                 :disable="!canGoPrevious"
+                aria-label="Go to previous page"
                 @click="goPrevious"
               />
               <q-input
@@ -78,22 +99,61 @@
                 round
                 dense
                 :disable="!canGoNext"
+                aria-label="Go to next page"
                 @click="goNext"
               />
-              <div class="text-caption text-grey-7">
-                {{ activePageDisplay }} / {{ totalPages }}
+              <q-btn
+                icon="last_page"
+                flat
+                round
+                dense
+                :disable="!canGoNext"
+                aria-label="Go to last page"
+                @click="goLast"
+              />
+              <q-separator vertical class="q-mx-sm viewer-controls__divider" />
+              <q-btn
+                :icon="textSelectIcon"
+                :color="textSelectMode ? 'primary' : 'grey-7'"
+                :flat="!textSelectMode"
+                :unelevated="textSelectMode"
+                dense
+                class="q-px-sm"
+                @click="toggleTextSelectMode"
+              >
+                {{ textSelectMode ? 'Selection' : 'Pan Overlay' }}
+              </q-btn>
+              <q-separator vertical class="q-mx-sm viewer-controls__divider" />
+              <q-btn
+                icon="zoom_out"
+                flat
+                round
+                dense
+                :disable="!canZoomOut"
+                aria-label="Zoom out"
+                @click="zoomOut"
+              />
+              <div class="zoom-display text-caption text-weight-medium">
+                {{ scaleDisplay }}
               </div>
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
-
-      <div class="col-12 col-md-8">
-        <q-card bordered>
-          <q-card-section class="row items-center justify-between">
-            <div class="text-subtitle1">Viewer</div>
-            <div class="text-caption text-grey-7" v-if="hasDocument">
-              {{ activePageDisplay }} / {{ totalPages }} · {{ currentViewportText }}
+              <q-btn
+                icon="zoom_in"
+                flat
+                round
+                dense
+                :disable="!canZoomIn"
+                aria-label="Zoom in"
+                @click="zoomIn"
+              />
+              <q-btn
+                icon="fit_screen"
+                dense
+                :color="isAutoScale ? 'primary' : 'grey-7'"
+                :flat="!isAutoScale"
+                :unelevated="isAutoScale"
+                aria-label="Fit to width"
+                @click="resetZoom"
+              />
             </div>
           </q-card-section>
           <q-separator />
@@ -103,6 +163,9 @@
                 :document="viewerDocument"
                 :page-index="pageIndex"
                 :text-select-mode="textSelectMode"
+                :scale="manualScale"
+                :min-scale="minScale"
+                :max-scale="maxScale"
                 :overlay-rects="emptyOverlayRects"
                 :show-drawing-rect="false"
                 @document-loaded="onDocumentLoaded"
@@ -110,6 +173,7 @@
                 @rendered="onRendered"
                 @load-error="onLoadError"
                 @render-error="onRenderError"
+                @scale-change="onScaleChange"
               />
             </div>
             <div v-else class="text-grey-6">
@@ -151,6 +215,12 @@ const pageCount = ref(0)
 const currentViewport = ref<PdfViewport | null>(null)
 const textSelectMode = ref(true)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const manualScale = ref<number | null>(null)
+const effectiveScale = ref(1)
+
+const minScale = 0.5
+const maxScale = 2
+const zoomStep = 0.1
 
 const emptyOverlayRects: Array<{ id: string; style: Record<string, string> }> = []
 
@@ -158,12 +228,18 @@ const totalPages = computed(() => (pageCount.value ? pageCount.value : 0))
 const activePageDisplay = computed(() => (pageCount.value ? pageIndex.value + 1 : 0))
 const canGoPrevious = computed(() => pageCount.value > 0 && pageIndex.value > 0)
 const canGoNext = computed(() => pageCount.value > 0 && pageIndex.value < pageCount.value - 1)
+const textSelectIcon = computed(() => (textSelectMode.value ? 'text_fields' : 'pan_tool'))
 const currentViewportText = computed(() => {
   if (!currentViewport.value) return ''
   const { width, height, scale } = currentViewport.value
   const rounded = (value: number) => Math.round(value)
   return `${rounded(width)}×${rounded(height)} @ ${scale.toFixed(2)}×`
 })
+const isAutoScale = computed(() => manualScale.value === null)
+const zoomBaseline = computed(() => manualScale.value ?? effectiveScale.value)
+const canZoomIn = computed(() => zoomBaseline.value < maxScale - 0.001)
+const canZoomOut = computed(() => zoomBaseline.value > minScale + 0.001)
+const scaleDisplay = computed(() => `${Math.round(effectiveScale.value * 100)}%`)
 
 const viewerDocument = computed(
   () => pdfDocument.value as PdfJsTypes.PDFDocumentProxy | null
@@ -205,6 +281,7 @@ function prepareForReload() {
   pageIndex.value = 0
   pageCount.value = 0
   currentViewport.value = null
+  effectiveScale.value = 1
 }
 
 function triggerFileDialog() {
@@ -248,6 +325,45 @@ function goNext() {
   }
 }
 
+function goFirst() {
+  if (canGoPrevious.value) {
+    pageIndex.value = 0
+  }
+}
+
+function goLast() {
+  if (canGoNext.value && pageCount.value) {
+    pageIndex.value = pageCount.value - 1
+  }
+}
+
+function toggleTextSelectMode() {
+  textSelectMode.value = !textSelectMode.value
+}
+
+function zoomIn() {
+  if (!canZoomIn.value) return
+  const next = clamp(zoomBaseline.value + zoomStep, minScale, maxScale)
+  manualScale.value = next
+}
+
+function zoomOut() {
+  if (!canZoomOut.value) return
+  const next = clamp(zoomBaseline.value - zoomStep, minScale, maxScale)
+  manualScale.value = next
+}
+
+function resetZoom() {
+  manualScale.value = null
+}
+
+function onScaleChange(payload: { scale: number; isAuto: boolean }) {
+  effectiveScale.value = payload.scale
+  if (payload.isAuto && manualScale.value !== null) {
+    manualScale.value = null
+  }
+}
+
 function onDocumentLoaded(payload: { pageCount: number }) {
   pageCount.value = payload.pageCount
   pageIndex.value = 0
@@ -258,6 +374,7 @@ function onDocumentUnloaded() {
   pageCount.value = 0
   pageIndex.value = 0
   currentViewport.value = null
+  effectiveScale.value = 1
   if (!viewerActive.value) {
     statusMessage.value = ''
   }
@@ -299,6 +416,19 @@ watch(documentError, (err) => {
   justify-content: center;
   overflow: hidden;
   max-height: 720px;
+}
+
+.viewer-controls {
+  flex-wrap: wrap;
+}
+
+.viewer-controls__divider {
+  height: 24px;
+}
+
+.zoom-display {
+  min-width: 56px;
+  text-align: center;
 }
 
 .page-input {
